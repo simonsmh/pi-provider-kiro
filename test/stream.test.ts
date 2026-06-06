@@ -741,9 +741,100 @@ describe("Feature 9: Streaming Integration", () => {
     // Verify tool results were sent in the request body
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     const currentMsg = body.conversationState.currentMessage.userInputMessage;
-    expect(currentMsg.content).toBe("Tool results provided.");
+    expect(currentMsg.content).toBe("");
     expect(currentMsg.userInputMessageContext?.toolResults).toHaveLength(1);
     expect(currentMsg.userInputMessageContext.toolResults[0].toolUseId).toBe("tc1");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("handles history with tools and results when the new request context.tools does not contain those tools", async () => {
+    const assistantWithTool: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "tc1", name: "calc", arguments: { expr: "2+2" } }],
+      api: "kiro-api",
+      provider: "kiro",
+      model: "claude-sonnet-4-5",
+      usage: zeroUsage,
+      stopReason: "toolUse",
+      timestamp: ts,
+    };
+    const toolResult: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: "tc1",
+      toolName: "calc",
+      content: [{ type: "text", text: "4" }],
+      isError: false,
+      timestamp: ts,
+    };
+    const context: Context = {
+      systemPrompt: "You are helpful",
+      messages: [
+        { role: "user", content: "Calculate 2+2", timestamp: ts },
+        assistantWithTool,
+        toolResult,
+        { role: "assistant", content: "The answer is 4", timestamp: ts } as AssistantMessage,
+        { role: "user", content: "Now do 3+3", timestamp: ts },
+      ],
+      tools: [{ name: "bash", description: "Bash", parameters: { type: "object", properties: {} } }],
+    };
+    const mockFetch = mockFetchOk('{"content":"OK"}{"contextUsagePercentage":8}');
+    vi.stubGlobal("fetch", mockFetch);
+
+    const stream = streamKiro(makeModel(), context, { apiKey: "tok" });
+    await collect(stream);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const uimc = body.conversationState.currentMessage.userInputMessage.userInputMessageContext;
+    expect(uimc?.tools).toBeDefined();
+    const toolNames = uimc.tools.map((t: any) => t.toolSpecification.name);
+    expect(toolNames).toContain("bash");
+    expect(toolNames).toContain("calc");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("handles history with tools and results when the new request context.tools is empty", async () => {
+    const assistantWithTool: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "tc1", name: "calc", arguments: { expr: "2+2" } }],
+      api: "kiro-api",
+      provider: "kiro",
+      model: "claude-sonnet-4-5",
+      usage: zeroUsage,
+      stopReason: "toolUse",
+      timestamp: ts,
+    };
+    const toolResult: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: "tc1",
+      toolName: "calc",
+      content: [{ type: "text", text: "4" }],
+      isError: false,
+      timestamp: ts,
+    };
+    const context: Context = {
+      systemPrompt: "You are helpful",
+      messages: [
+        { role: "user", content: "Calculate 2+2", timestamp: ts },
+        assistantWithTool,
+        toolResult,
+        { role: "assistant", content: "The answer is 4", timestamp: ts } as AssistantMessage,
+        { role: "user", content: "Now do 3+3", timestamp: ts },
+      ],
+      tools: [],
+    };
+    const mockFetch = mockFetchOk('{"content":"OK"}{"contextUsagePercentage":8}');
+    vi.stubGlobal("fetch", mockFetch);
+
+    const stream = streamKiro(makeModel(), context, { apiKey: "tok" });
+    await collect(stream);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const uimc = body.conversationState.currentMessage.userInputMessage.userInputMessageContext;
+    expect(uimc?.tools).toBeDefined();
+    const toolNames = uimc.tools.map((t: any) => t.toolSpecification.name);
+    expect(toolNames).toContain("calc");
 
     vi.unstubAllGlobals();
   });

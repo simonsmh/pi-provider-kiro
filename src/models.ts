@@ -95,7 +95,20 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       return;
     }
 
-    const data = (await response.json()) as { models?: Array<{ modelId: string }> };
+    const data = (await response.json()) as {
+      models?: Array<{
+        modelId: string;
+        additionalModelRequestFieldsSchema?: {
+          properties?: {
+            output_config?: {
+              properties?: {
+                effort?: unknown;
+              };
+            };
+          };
+        };
+      }>;
+    };
     const fetchedModels = data.models || [];
     if (fetchedModels.length === 0) return;
 
@@ -104,13 +117,18 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       const piId = kiroId.replace(/(\d)\.(\d)/g, "$1-$2");
 
       const existing = kiroModels.find((m) => m.id === piId);
+      const isReasoning =
+        piId.includes("opus") || piId.includes("sonnet") || piId.includes("coder") || piId.includes("deepseek");
+      const hasEffortSchema = !!fm.additionalModelRequestFieldsSchema?.properties?.output_config?.properties?.effort;
+
       if (existing) {
-        return existing;
+        return {
+          ...existing,
+          supportsEffort: hasEffortSchema,
+        };
       }
 
       const isClaude = piId.startsWith("claude");
-      const isReasoning =
-        piId.includes("opus") || piId.includes("sonnet") || piId.includes("coder") || piId.includes("deepseek");
       const name = piId
         .split("-")
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -123,6 +141,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         provider: "kiro" as const,
         baseUrl: `${qHost}/generateAssistantResponse`,
         reasoning: isReasoning,
+        supportsEffort: hasEffortSchema,
         input: isClaude ? (["text", "image"] as ("text" | "image")[]) : (["text"] as ("text" | "image")[]),
         cost: ZERO_COST,
         contextWindow: isClaude ? 1000000 : 200000,
@@ -138,6 +157,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         provider: "kiro" as const,
         baseUrl: `${qHost}/generateAssistantResponse`,
         reasoning: true,
+        supportsEffort: false,
         input: ["text", "image"],
         cost: ZERO_COST,
         contextWindow: 1000000,
@@ -269,6 +289,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: true,
     thinkingLevelMap: { xhigh: "xhigh" },
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
@@ -283,6 +304,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: true,
     thinkingLevelMap: { xhigh: "xhigh" },
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
@@ -298,6 +320,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: true,
     thinkingLevelMap: { xhigh: "xhigh" },
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
@@ -312,6 +335,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: true,
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 1000000,
@@ -325,6 +349,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: false,
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 200000,
@@ -338,6 +363,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: false,
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 200000,
@@ -351,6 +377,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: false,
+    supportsEffort: false,
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 200000,
@@ -364,6 +391,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: false,
     input: ["text"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 164000,
@@ -377,6 +405,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: false,
+    supportsEffort: false,
     input: ["text"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 196000,
@@ -389,6 +418,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: false,
+    supportsEffort: false,
     input: ["text"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 196000,
@@ -402,6 +432,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: false,
     input: ["text"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 200000,
@@ -415,6 +446,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: false,
     input: ["text"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 256000,
@@ -428,6 +460,7 @@ export const kiroModels = [
     provider: "kiro" as const,
     baseUrl: BASE_URL,
     reasoning: true,
+    supportsEffort: false,
     input: ["text", "image"] as ("text" | "image")[],
     cost: ZERO_COST,
     contextWindow: 1000000,
