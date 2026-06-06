@@ -29,7 +29,7 @@ function makeModel(overrides?: Partial<Model<Api>>): Model<Api> {
     name: "Sonnet",
     api: "kiro-api",
     provider: "kiro",
-    baseUrl: "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+    baseUrl: "https://runtime.us-east-1.kiro.dev/",
     reasoning: true,
     input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -117,7 +117,7 @@ describe("Feature 9: Streaming Integration", () => {
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toContain("generateAssistantResponse");
+    expect(url).toBe("https://runtime.us-east-1.kiro.dev/");
     expect(opts.headers.Authorization).toBe("Bearer test-token");
 
     const done = events.find((e) => e.type === "done");

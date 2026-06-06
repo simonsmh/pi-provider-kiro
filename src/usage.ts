@@ -4,7 +4,7 @@
 import type { OAuthCredentials } from "@earendil-works/pi-ai";
 import type { KiroCredentials } from "./oauth.js";
 
-const USAGE_ENDPOINT = "https://q.{region}.amazonaws.com/";
+const USAGE_ENDPOINT = "https://management.{region}.kiro.dev/";
 const MANAGE_USAGE_URL = "https://app.kiro.dev/account/usage";
 const JSON_HEADERS = {
   "Content-Type": "application/x-amz-json-1.0",

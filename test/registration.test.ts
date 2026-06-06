@@ -80,7 +80,7 @@ describe("Feature 1: Extension Registration", () => {
     const models = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: ssoRegion };
     const modified = config.oauth.modifyModels(models, creds);
-    expect(modified[0].baseUrl).toBe(`https://q.${expectedApiRegion}.amazonaws.com/generateAssistantResponse`);
+    expect(modified[0].baseUrl).toBe(`https://runtime.${expectedApiRegion}.kiro.dev/`);
   });
 
   it("modifyModels filters out unavailable models for EU regions", async () => {

@@ -223,7 +223,7 @@ export function streamKiro(
     try {
       let accessToken = options?.apiKey;
       if (!accessToken) throw new Error("Kiro credentials not set. Run /login kiro or install kiro-cli.");
-      const endpoint = model.baseUrl || "https://q.us-east-1.amazonaws.com/generateAssistantResponse";
+      const endpoint = model.baseUrl || "https://runtime.us-east-1.kiro.dev/";
 
       const optionProfileArn =
         (options as unknown as { credentials?: { profileArn?: string }; profileArn?: string })?.credentials

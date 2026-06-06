@@ -77,18 +77,18 @@ export function isCacheStale(region: string): boolean {
 
 export async function updateKiroModelsCache(accessToken: string, region: string, profileArn?: string): Promise<void> {
   try {
-    const qHost = `https://q.${region}.amazonaws.com`;
-    const url = new URL(`${qHost}/ListAvailableModels`);
-    url.searchParams.set("origin", "AI_EDITOR");
-    if (profileArn) {
-      url.searchParams.set("profileArn", profileArn);
-    }
-
-    const response = await fetch(url.toString(), {
-      method: "GET",
+    const managementUrl = `https://management.${region}.kiro.dev/`;
+    const response = await fetch(managementUrl, {
+      method: "POST",
       headers: {
+        "Content-Type": "application/x-amz-json-1.0",
+        "X-Amz-Target": "AmazonCodeWhispererService.ListAvailableModels",
         Authorization: `Bearer ${accessToken}`,
       },
+      body: JSON.stringify({
+        origin: "KIRO_CLI",
+        ...(profileArn ? { profileArn } : {}),
+      }),
     });
 
     if (!response.ok) {
@@ -121,7 +121,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         name: name,
         api: "kiro-api" as const,
         provider: "kiro" as const,
-        baseUrl: `${qHost}/generateAssistantResponse`,
+        baseUrl: `https://runtime.${region}.kiro.dev/`,
         reasoning: isReasoning,
         input: isClaude ? (["text", "image"] as ("text" | "image")[]) : (["text"] as ("text" | "image")[]),
         cost: ZERO_COST,
@@ -136,7 +136,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         name: "Auto",
         api: "kiro-api" as const,
         provider: "kiro" as const,
-        baseUrl: `${qHost}/generateAssistantResponse`,
+        baseUrl: `https://runtime.${region}.kiro.dev/`,
         reasoning: true,
         input: ["text", "image"],
         cost: ZERO_COST,
@@ -258,7 +258,7 @@ export function filterModelsByRegion<T extends { id: string }>(models: T[], apiR
   return models.filter((m) => allowed.has(m.id));
 }
 
-const BASE_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse";
+const BASE_URL = "https://runtime.us-east-1.kiro.dev/";
 const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
 export const kiroModels = [

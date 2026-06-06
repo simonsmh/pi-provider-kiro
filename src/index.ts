@@ -18,7 +18,7 @@ export default function (pi: ExtensionAPI) {
     setExtensionContext(ctx);
   });
   pi.registerProvider("kiro", {
-    baseUrl: "https://q.us-east-1.amazonaws.com/generateAssistantResponse",
+    baseUrl: "https://runtime.us-east-1.kiro.dev/",
     api: "kiro-api",
     models: kiroModels,
     oauth: {
@@ -34,7 +34,7 @@ export default function (pi: ExtensionAPI) {
         const nonKiro = models.filter((m: Model<Api>) => m.provider !== "kiro");
         const modifiedKiro = cachedKiro.map((m: Model<Api>) => ({
           ...m,
-          baseUrl: `https://q.${apiRegion}.amazonaws.com/generateAssistantResponse`,
+          baseUrl: `https://runtime.${apiRegion}.kiro.dev/`,
         }));
 
         return [...nonKiro, ...modifiedKiro];
