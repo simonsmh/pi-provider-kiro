@@ -45,7 +45,7 @@ export function buildModelDef(
     reasoning: hasThinkingSchema,
     supportsEffort: hasEffortSchema,
     ...(isOpus && hasEffortSchema
-      ? { thinkingLevelMap: { off: "low", minimal: "medium", low: "high", medium: "xhigh", high: "max" } }
+      ? { thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" } }
       : {}),
     input: (isClaude || piId === "auto") ? ["text", "image"] : ["text"],
     cost: ZERO_COST,

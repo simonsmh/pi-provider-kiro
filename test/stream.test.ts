@@ -27,7 +27,7 @@ vi.mock("../src/models.js", async (importOriginal) => {
         baseUrl: "https://runtime.us-east-1.kiro.dev/",
         reasoning: true,
         supportsEffort: true,
-        thinkingLevelMap: { off: "low", minimal: "medium", low: "high", medium: "xhigh", high: "max" },
+        thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" },
         input: ["text" as const],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 1000000,
@@ -2352,16 +2352,16 @@ describe("Feature 9: Streaming Integration", () => {
     const mockFetch = mockFetchOk('{"content":"Done."}');
     vi.stubGlobal("fetch", mockFetch);
 
-    // The mocked cached model is Opus, which carries a full thinkingLevelMap
-    // remapping pi's ladder (including "off") onto Opus's 5 effort tiers.
+    // The mocked cached model is Opus, which carries a thinkingLevelMap that
+    // remaps pi's ladder up one tier (skipping max for safety).
     const cases = [
-      { input: "off", expectedEffort: "low", expectedThinkingType: "adaptive" },
-      { input: "minimal", expectedEffort: "medium", expectedThinkingType: "adaptive" },
-      { input: "low", expectedEffort: "high", expectedThinkingType: "adaptive" },
-      { input: "medium", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
-      { input: "high", expectedEffort: "max", expectedThinkingType: "adaptive" },
+      { input: "minimal", expectedEffort: "low", expectedThinkingType: "adaptive" },
+      { input: "low", expectedEffort: "medium", expectedThinkingType: "adaptive" },
+      { input: "medium", expectedEffort: "high", expectedThinkingType: "adaptive" },
+      { input: "high", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
       { input: "xhigh", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
       { input: "max", expectedEffort: "max", expectedThinkingType: "adaptive" },
+      { input: "off", expectedEffort: undefined, expectedThinkingType: "disabled" },
       { input: false, expectedEffort: undefined, expectedThinkingType: "disabled" },
       { input: undefined, expectedEffort: "medium", expectedThinkingType: "adaptive" },
     ];

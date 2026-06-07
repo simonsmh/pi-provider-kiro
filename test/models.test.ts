@@ -75,7 +75,7 @@ describe("Feature 2: Model Definitions", () => {
         baseUrl: "https://example.com",
         reasoning: true,
         supportsEffort: true,
-        thinkingLevelMap: { off: "low", minimal: "medium", low: "high", medium: "xhigh", high: "max" },
+        thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" },
         input: ["text", "image"],
         cost: ZERO_COST,
         contextWindow: 1000000,

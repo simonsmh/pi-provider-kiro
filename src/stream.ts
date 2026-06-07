@@ -250,18 +250,7 @@ export function streamKiro(
       }
 
       const kiroModelId = resolveKiroModel(model.id);
-      // A model may opt into reasoning even when pi requests "off" by defining
-      // an "off" entry in its thinkingLevelMap (e.g. Opus uses its full effort
-      // ladder, where pi's "off" maps to the lowest effort tier rather than
-      // disabling thinking entirely).
-      const resolvedModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) || (model as any);
-      const modelThinkingLevelMap =
-        (resolvedModel?.thinkingLevelMap as Record<string, string> | undefined) ?? {};
-      const offOverridesToEffort = "off" in modelThinkingLevelMap;
-      const thinkingEnabled =
-        (options?.reasoning as any) !== false &&
-        ((options?.reasoning as any) !== "off" || offOverridesToEffort) &&
-        (!!options?.reasoning || model.reasoning);
+      const thinkingEnabled = (options?.reasoning as any) !== false && (options?.reasoning as any) !== "off" && (!!options?.reasoning || model.reasoning);
       debugLog("request.init", {
         endpoint,
         model: model.id,
