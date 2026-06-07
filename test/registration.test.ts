@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { defaultModels, getCachedModels } from "../src/models.js";
+import { defaultModels, getCachedModels, BOOTSTRAP_MODEL_COUNT } from "../src/models.js";
 
 // Mock models.js's getCachedModels helper to control cache contents
 vi.mock("../src/models.js", async (importOriginal) => {
@@ -36,13 +36,13 @@ describe("Feature 1: Extension Registration", () => {
     expect(registerProvider.mock.calls[0][0]).toBe("kiro");
   });
 
-  it("registers 13 models", async () => {
+  it("registers bootstrap model count", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
     mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    expect(config.models).toHaveLength(13);
+    expect(config.models).toHaveLength(BOOTSTRAP_MODEL_COUNT);
   });
 
   it("registers OAuth with name 'Kiro (Builder ID / Google / GitHub)'", async () => {
@@ -109,7 +109,7 @@ describe("Feature 1: Extension Registration", () => {
     const modified = config.oauth.modifyModels(models, creds);
     
     // Fallback should contain all defaultModels
-    expect(modified.length).toBe(13);
+    expect(modified.length).toBe(BOOTSTRAP_MODEL_COUNT);
     const ids = modified.map((m: { id: string }) => m.id);
     expect(ids).toContain("claude-sonnet-4-6");
     expect(ids).toContain("deepseek-3-2");

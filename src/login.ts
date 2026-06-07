@@ -18,6 +18,7 @@ import http from "node:http";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { showLoginUI, showWaitingUI, hasExtensionContext } from "./login-ui.js";
 import { BUILDER_ID_START_URL, type KiroAuthMethod, type KiroCredentials, SSO_SCOPES } from "./oauth.js";
+import { debugLog } from "./debug.js";
 
 type PromptFn = (p: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
 
@@ -161,7 +162,10 @@ async function tryRegisterAndAuthorize(
       grantTypes: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
     }),
   });
-  if (!regResp.ok) return null;
+  if (!regResp.ok) {
+    debugLog("idc-register", { region, status: regResp.status, statusText: regResp.statusText });
+    return null;
+  }
   const { clientId, clientSecret } = (await regResp.json()) as { clientId: string; clientSecret: string };
 
   const devResp = await fetch(`${oidcEndpoint}/device_authorization`, {
@@ -169,7 +173,10 @@ async function tryRegisterAndAuthorize(
     headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
     body: JSON.stringify({ clientId, clientSecret, startUrl }),
   });
-  if (!devResp.ok) return null;
+  if (!devResp.ok) {
+    debugLog("idc-device-auth", { region, status: devResp.status, statusText: devResp.statusText });
+    return null;
+  }
 
   return { clientId, clientSecret, oidcEndpoint, devAuth: (await devResp.json()) as DeviceAuth };
 }

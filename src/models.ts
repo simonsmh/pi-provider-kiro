@@ -55,6 +55,13 @@ export function buildModelDef(
   };
 }
 
+// Bootstrap model IDs for cold-start before cache populates.
+// These are fallback guesses; actual model list and capabilities come from
+// updateKiroModelsCache() which calls ListAvailableModels.
+// MAINTENANCE: This list should reflect Kiro's current offerings.
+// If you add/remove models here, also update test expectations in:
+//   - test/models.test.ts (BOOTSTRAP_MODEL_COUNT)
+//   - test/registration.test.ts (model count assertions)
 const BOOTSTRAP_MODEL_IDS = [
   "claude-opus-4-8",
   "claude-opus-4-7",
@@ -65,11 +72,12 @@ const BOOTSTRAP_MODEL_IDS = [
   "claude-haiku-4-5",
   "deepseek-3-2",
   "minimax-m2-1",
-  "minimax-m2-5",
   "glm-5",
   "qwen3-coder-next",
   "auto",
 ];
+
+export const BOOTSTRAP_MODEL_COUNT = BOOTSTRAP_MODEL_IDS.length; // 12 models
 
 const DEFAULT_BASE_URL = "https://runtime.us-east-1.kiro.dev/";
 

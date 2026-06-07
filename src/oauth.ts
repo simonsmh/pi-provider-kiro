@@ -265,6 +265,7 @@ async function refreshKiroTokenInternal(credentials: OAuthCredentials): Promise<
 
     // Layer 4: kiro-cli may have a newer refresh token (expired access token).
     // Try refreshing with those credentials instead of the stale ones from auth.json.
+    // Only attempt if the cli credentials differ from what we already tried.
     const expiredCliCreds = getKiroCliCredentialsAllowExpired();
     if (expiredCliCreds && expiredCliCreds.refresh !== credentials.refresh) {
       try {

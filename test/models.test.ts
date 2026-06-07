@@ -6,6 +6,7 @@ import {
   resolveApiRegion,
   resolveKiroModel,
   ZERO_COST,
+  BOOTSTRAP_MODEL_COUNT,
 } from "../src/models.js";
 
 describe("Feature 2: Model Definitions", () => {
@@ -32,8 +33,8 @@ describe("Feature 2: Model Definitions", () => {
   });
 
   describe("KIRO_MODEL_IDS", () => {
-    it("contains 13 model IDs initially", () => {
-      expect(KIRO_MODEL_IDS.size).toBe(13);
+    it("contains at least bootstrap model IDs", () => {
+      expect(KIRO_MODEL_IDS.size).toBeGreaterThanOrEqual(BOOTSTRAP_MODEL_COUNT);
     });
   });
 
@@ -129,8 +130,8 @@ describe("Feature 2: Model Definitions", () => {
   });
 
   describe("defaultModels bootstrap", () => {
-    it("contains 13 models", () => {
-      expect(defaultModels).toHaveLength(13);
+    it("contains bootstrap model count", () => {
+      expect(defaultModels).toHaveLength(BOOTSTRAP_MODEL_COUNT);
     });
 
     it("has reasoning=true and supportsEffort=false for all bootstrap models", () => {

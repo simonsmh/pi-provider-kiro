@@ -34,7 +34,11 @@ export function debugLog(section: string, data?: unknown): void {
 function redact(key: string, value: unknown): unknown {
   if (typeof value !== "string") return value;
   const k = key.toLowerCase();
-  if (k === "authorization" || k === "access" || k === "refresh" || k.includes("token") || k.includes("secret")) {
+  // Exact matches for known sensitive fields
+  const exactMatch = new Set(["authorization", "access", "refresh", "accesstoken", "refreshtoken"]);
+  // Substring matches for key patterns
+  const substringPatterns = ["secret", "password", "credential"];
+  if (exactMatch.has(k) || substringPatterns.some((p) => k.includes(p))) {
     return value.length > 8 ? `${value.slice(0, 4)}…${value.slice(-4)}(${value.length})` : "<redacted>";
   }
   return value;
