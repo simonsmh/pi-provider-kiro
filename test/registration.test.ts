@@ -1,6 +1,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
-import { kiroModels } from "../src/models.js";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { defaultModels, getCachedModels } from "../src/models.js";
+
+// Mock models.js's getCachedModels helper to control cache contents
+vi.mock("../src/models.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/models.js")>();
+  return {
+    ...original,
+    getCachedModels: vi.fn(),
+  };
+});
 
 const mockPi = () => {
   const registerProvider = vi.fn();
@@ -8,6 +17,10 @@ const mockPi = () => {
 };
 
 describe("Feature 1: Extension Registration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("exports a default function", async () => {
     const mod = await import("../src/index.js");
     expect(typeof mod.default).toBe("function");
@@ -23,7 +36,7 @@ describe("Feature 1: Extension Registration", () => {
     expect(registerProvider.mock.calls[0][0]).toBe("kiro");
   });
 
-  it("registers 12 models", async () => {
+  it("registers 13 models", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
     mod.default(pi);
@@ -72,39 +85,63 @@ describe("Feature 1: Extension Registration", () => {
     ssoRegion,
     expectedApiRegion,
   }) => {
+    vi.mocked(getCachedModels).mockReturnValue([]);
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
     mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    const models = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
+    const models = defaultModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: ssoRegion };
     const modified = config.oauth.modifyModels(models, creds);
     expect(modified[0].baseUrl).toBe(`https://q.${expectedApiRegion}.amazonaws.com/generateAssistantResponse`);
   });
 
-  it("modifyModels filters out unavailable models for EU regions", async () => {
+  it("modifyModels falls back to defaultModels when cache is empty", async () => {
+    vi.mocked(getCachedModels).mockReturnValue([]);
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
     mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    const models = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
+    const models = defaultModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: "eu-west-1" };
     const modified = config.oauth.modifyModels(models, creds);
+    
+    // Fallback should contain all defaultModels
+    expect(modified.length).toBe(13);
     const ids = modified.map((m: { id: string }) => m.id);
-    expect(modified.length).toBeLessThan(models.length);
-    expect(ids).not.toContain("deepseek-3-2");
     expect(ids).toContain("claude-sonnet-4-6");
+    expect(ids).toContain("deepseek-3-2");
+  });
+
+  it("modifyModels uses cached models when cache is populated", async () => {
+    const cachedModelsMock = [
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4 6", api: "kiro-api" as const, provider: "kiro" as const, baseUrl: "cached", reasoning: true, supportsEffort: true, input: ["text" as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 8192 }
+    ];
+    vi.mocked(getCachedModels).mockReturnValue(cachedModelsMock);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    const models = defaultModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
+    const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: "eu-west-1" };
+    const modified = config.oauth.modifyModels(models, creds);
+
+    expect(modified.length).toBe(1);
+    expect(modified[0].id).toBe("claude-sonnet-4-6");
+    expect(modified[0].baseUrl).toBe("https://q.eu-central-1.amazonaws.com/generateAssistantResponse");
   });
 
   it("modifyModels preserves non-kiro provider models", async () => {
+    vi.mocked(getCachedModels).mockReturnValue([]);
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
     mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    const kiro = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
+    const kiro = defaultModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const codex = [
       {
         id: "gpt-5.4",

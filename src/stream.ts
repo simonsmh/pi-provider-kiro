@@ -22,7 +22,7 @@ import { debugEnabled, debugLog } from "./debug.js";
 import { parseKiroEvents } from "./event-parser.js";
 import { addPlaceholderTools, HISTORY_LIMIT, HISTORY_LIMIT_CONTEXT_WINDOW, truncateHistory } from "./history.js";
 import { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, refreshViaKiroCli } from "./kiro-cli.js";
-import { resolveKiroModel, kiroModels, getCachedModels } from "./models.js";
+import { resolveKiroModel, getCachedModels } from "./models.js";
 import {
   capacityRetryConfig,
   exponentialBackoff,
@@ -379,8 +379,7 @@ export function streamKiro(
           const imgs = extractImages(firstMsg);
           if (imgs.length > 0) currentImages = convertImagesToKiro(imgs as ImageContent[]);
         }
-        const baseModel = kiroModels.find((m) => m.id === model.id) || 
-                          getCachedModels(region).find((m) => m.id === model.id);
+        const baseModel = getCachedModels(region).find((m) => m.id === model.id) || (model as any);
         const supportsEffort = baseModel?.supportsEffort;
         let additionalModelRequestFields: Record<string, unknown> | undefined;
         if (supportsEffort) {

@@ -6,22 +6,79 @@ import { join } from "node:path";
 
 const CACHE_PATH = join(homedir(), ".kiro-models-cache.json");
 
-// Valid Kiro model IDs - API accepts friendly names directly
-export const KIRO_MODEL_IDS = new Set([
-  "claude-opus-4.8",
-  "claude-opus-4.7",
-  "claude-opus-4.6",
-  "claude-sonnet-4.6",
-  "claude-sonnet-4.5",
+export const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+export interface KiroModelDef {
+  id: string;
+  name: string;
+  api: "kiro-api";
+  provider: "kiro";
+  baseUrl: string;
+  reasoning: boolean;
+  supportsEffort: boolean;
+  thinkingLevelMap?: { xhigh: string };
+  input: ("text" | "image")[];
+  cost: typeof ZERO_COST;
+  contextWindow: number;
+  maxTokens: number;
+  firstTokenTimeout?: number;
+}
+
+export function buildModelDef(
+  piId: string,
+  baseUrl: string,
+  hasThinkingSchema: boolean,
+  hasEffortSchema: boolean,
+): KiroModelDef {
+  const isClaude = piId.startsWith("claude");
+  const isOpus = piId.includes("opus");
+  const name = piId === "auto"
+    ? "Auto"
+    : piId.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+  return {
+    id: piId,
+    name,
+    api: "kiro-api",
+    provider: "kiro",
+    baseUrl,
+    reasoning: hasThinkingSchema,
+    supportsEffort: hasEffortSchema,
+    ...(isOpus && hasEffortSchema ? { thinkingLevelMap: { xhigh: "xhigh" } } : {}),
+    input: (isClaude || piId === "auto") ? ["text", "image"] : ["text"],
+    cost: ZERO_COST,
+    contextWindow: isClaude || piId === "auto" ? 1000000 : 200000,
+    maxTokens: isOpus ? 128000 : isClaude || piId === "auto" ? 65536 : 8192,
+    ...(isOpus ? { firstTokenTimeout: 180_000 } : {}),
+  };
+}
+
+const BOOTSTRAP_MODEL_IDS = [
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
+  "claude-sonnet-4-5",
   "claude-sonnet-4",
-  "claude-haiku-4.5",
-  "deepseek-3.2",
-  "minimax-m2.1",
-  "minimax-m2.5",
+  "claude-haiku-4-5",
+  "deepseek-3-2",
+  "minimax-m2-1",
+  "minimax-m2-5",
   "glm-5",
   "qwen3-coder-next",
   "auto",
-]);
+];
+
+const DEFAULT_BASE_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse";
+
+export const defaultModels: KiroModelDef[] = BOOTSTRAP_MODEL_IDS.map((id) =>
+  buildModelDef(id, DEFAULT_BASE_URL, true, false)
+);
+
+// Valid Kiro model IDs - API accepts friendly names directly
+export const KIRO_MODEL_IDS = new Set<string>(
+  BOOTSTRAP_MODEL_IDS.map((id) => id.replace(/(\d)-(\d)/g, "$1.$2"))
+);
 
 let cachedIdsLoaded = false;
 export function loadCachedModelIds(): void {
@@ -29,7 +86,7 @@ export function loadCachedModelIds(): void {
   if (!existsSync(CACHE_PATH)) return;
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
-    const data = JSON.parse(raw) as Record<string, typeof kiroModels>;
+    const data = JSON.parse(raw) as Record<string, KiroModelDef[]>;
     for (const regionModels of Object.values(data)) {
       if (Array.isArray(regionModels)) {
         for (const m of regionModels) {
@@ -46,11 +103,11 @@ export function loadCachedModelIds(): void {
   }
 }
 
-export function getCachedModels(region: string): typeof kiroModels {
+export function getCachedModels(region: string): KiroModelDef[] {
   if (existsSync(CACHE_PATH)) {
     try {
       const raw = readFileSync(CACHE_PATH, "utf-8");
-      const data = JSON.parse(raw) as Record<string, typeof kiroModels>;
+      const data = JSON.parse(raw) as Record<string, KiroModelDef[]>;
       if (data && Array.isArray(data[region])) {
         return data[region];
       }
@@ -58,14 +115,14 @@ export function getCachedModels(region: string): typeof kiroModels {
       // Ignore cache errors
     }
   }
-  return filterModelsByRegion(kiroModels, region);
+  return [];
 }
 
 export function isCacheStale(region: string): boolean {
   if (!existsSync(CACHE_PATH)) return true;
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
-    const data = JSON.parse(raw) as Record<string, typeof kiroModels>;
+    const data = JSON.parse(raw) as Record<string, KiroModelDef[]>;
     if (!data || !Array.isArray(data[region])) return true;
     const stat = statSync(CACHE_PATH);
     // Stale if older than 1 hour
@@ -100,6 +157,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         modelId: string;
         additionalModelRequestFieldsSchema?: {
           properties?: {
+            thinking?: unknown;
             output_config?: {
               properties?: {
                 effort?: unknown;
@@ -116,37 +174,11 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       const kiroId = fm.modelId;
       const piId = kiroId.replace(/(\d)\.(\d)/g, "$1-$2");
 
-      const existing = kiroModels.find((m) => m.id === piId);
-      const isReasoning =
-        piId.includes("opus") || piId.includes("sonnet") || piId.includes("coder") || piId.includes("deepseek");
-      const hasEffortSchema = !!fm.additionalModelRequestFieldsSchema?.properties?.output_config?.properties?.effort;
+      const schemaProps = fm.additionalModelRequestFieldsSchema?.properties;
+      const hasThinkingSchema = !!schemaProps?.thinking;
+      const hasEffortSchema = !!schemaProps?.output_config?.properties?.effort;
 
-      if (existing) {
-        return {
-          ...existing,
-          supportsEffort: hasEffortSchema,
-        };
-      }
-
-      const isClaude = piId.startsWith("claude");
-      const name = piId
-        .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-
-      return {
-        id: piId,
-        name: name,
-        api: "kiro-api" as const,
-        provider: "kiro" as const,
-        baseUrl: `${qHost}/generateAssistantResponse`,
-        reasoning: isReasoning,
-        supportsEffort: hasEffortSchema,
-        input: isClaude ? (["text", "image"] as ("text" | "image")[]) : (["text"] as ("text" | "image")[]),
-        cost: ZERO_COST,
-        contextWindow: isClaude ? 1000000 : 200000,
-        maxTokens: isClaude ? 65536 : 8192,
-      };
+      return buildModelDef(piId, `${qHost}/generateAssistantResponse`, hasThinkingSchema, hasEffortSchema);
     });
 
     if (!newModels.some((m) => m.id === "auto")) {
@@ -165,7 +197,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       });
     }
 
-    let cache: Record<string, typeof kiroModels> = {};
+    let cache: Record<string, KiroModelDef[]> = {};
     if (existsSync(CACHE_PATH)) {
       try {
         cache = JSON.parse(readFileSync(CACHE_PATH, "utf-8"));
@@ -224,246 +256,3 @@ export function resolveApiRegion(ssoRegion: string | undefined): string {
   if (!ssoRegion) return "us-east-1";
   return API_REGION_MAP[ssoRegion] ?? ssoRegion;
 }
-
-/**
- * Model availability per API region (allowlist).
- * Source: https://kiro.dev/docs/cli/models/
- *
- * When a new region is added, it must be explicitly listed here with its
- * supported models — unknown regions get no models, forcing a conscious
- * update rather than silently exposing unsupported models.
- */
-const MODELS_BY_REGION: Record<string, Set<string>> = {
-  "us-east-1": new Set([
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4-5",
-    "claude-sonnet-4",
-    "claude-haiku-4-5",
-    "deepseek-3-2",
-    "minimax-m2-1",
-    "minimax-m2-5",
-    "glm-5",
-    "qwen3-coder-next",
-    "auto",
-  ]),
-  // API-verified 2026-04-14 (eu-west-1 IdC token), glm-5 removed 2026-05-05 (us-east-1 only)
-  "eu-central-1": new Set([
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4-5",
-    "claude-sonnet-4",
-    "claude-haiku-4-5",
-    "minimax-m2-1",
-    "minimax-m2-5",
-    "qwen3-coder-next",
-    "auto",
-  ]),
-};
-
-/** Filter a model list to only those available in the given API region.
- *  Unknown regions return an empty list — add the region to MODELS_BY_REGION. */
-export function filterModelsByRegion<T extends { id: string }>(models: T[], apiRegion: string): T[] {
-  const allowed = MODELS_BY_REGION[apiRegion];
-  if (!allowed) {
-    console.warn(
-      `[pi-provider-kiro] Unknown API region "${apiRegion}" — no models available. Update MODELS_BY_REGION in models.ts.`,
-    );
-    return [];
-  }
-  return models.filter((m) => allowed.has(m.id));
-}
-
-const BASE_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse";
-const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
-
-export const kiroModels = [
-  {
-    id: "claude-opus-4-8",
-    name: "Claude Opus 4.8",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: true,
-    thinkingLevelMap: { xhigh: "xhigh" },
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 128000,
-    firstTokenTimeout: 180_000,
-  },
-  {
-    id: "claude-opus-4-7",
-    name: "Claude Opus 4.7",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: true,
-    thinkingLevelMap: { xhigh: "xhigh" },
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 128000,
-    firstTokenTimeout: 180_000,
-  },
-  // Claude Opus 4.6
-  {
-    id: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: true,
-    thinkingLevelMap: { xhigh: "xhigh" },
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 32768,
-  },
-  // Claude Sonnet 4.6
-  {
-    id: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: true,
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 65536,
-  },
-  // Claude Sonnet 4.5
-  {
-    id: "claude-sonnet-4-5",
-    name: "Claude Sonnet 4.5",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: false,
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 65536,
-  },
-  // Claude Sonnet 4
-  {
-    id: "claude-sonnet-4",
-    name: "Claude Sonnet 4",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: false,
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 65536,
-  },
-  // Claude Haiku 4.5
-  {
-    id: "claude-haiku-4-5",
-    name: "Claude Haiku 4.5",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: false,
-    supportsEffort: false,
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 65536,
-  },
-  // DeepSeek
-  {
-    id: "deepseek-3-2",
-    name: "DeepSeek 3.2",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: false,
-    input: ["text"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 164000,
-    maxTokens: 8192,
-  },
-  // MiniMax
-  {
-    id: "minimax-m2-5",
-    name: "MiniMax M2.5",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: false,
-    supportsEffort: false,
-    input: ["text"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 196000,
-    maxTokens: 8192,
-  },
-  {
-    id: "minimax-m2-1",
-    name: "MiniMax M2.1",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: false,
-    supportsEffort: false,
-    input: ["text"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 196000,
-    maxTokens: 8192,
-  },
-  // GLM (Zhipu AI)
-  {
-    id: "glm-5",
-    name: "GLM 5",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: false,
-    input: ["text"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 8192,
-  },
-  // Qwen (Alibaba)
-  {
-    id: "qwen3-coder-next",
-    name: "Qwen3 Coder Next",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: false,
-    input: ["text"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 256000,
-    maxTokens: 8192,
-  },
-  // Auto — routes to optimal model per task
-  {
-    id: "auto",
-    name: "Auto",
-    api: "kiro-api" as const,
-    provider: "kiro" as const,
-    baseUrl: BASE_URL,
-    reasoning: true,
-    supportsEffort: false,
-    input: ["text", "image"] as ("text" | "image")[],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 65536,
-  },
-];
