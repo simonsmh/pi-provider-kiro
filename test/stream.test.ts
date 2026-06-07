@@ -17,6 +17,7 @@ vi.mock("../src/models.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/models.js")>();
   return {
     ...actual,
+    resolveKiroModel: vi.fn((id: string) => id.replace(/(\d)-(\d)/g, "$1.$2")),
     getCachedModels: vi.fn(() => [
       {
         id: "claude-opus-4-8",

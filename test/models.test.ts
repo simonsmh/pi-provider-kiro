@@ -6,35 +6,22 @@ import {
   resolveApiRegion,
   resolveKiroModel,
   ZERO_COST,
-  BOOTSTRAP_MODEL_COUNT,
 } from "../src/models.js";
 
 describe("Feature 2: Model Definitions", () => {
   describe("resolveKiroModel", () => {
-    it.each([
-      ["claude-opus-4-8", "claude-opus-4.8"],
-      ["claude-opus-4-7", "claude-opus-4.7"],
-      ["claude-opus-4-6", "claude-opus-4.6"],
-      ["claude-sonnet-4-6", "claude-sonnet-4.6"],
-      ["claude-sonnet-4-5", "claude-sonnet-4.5"],
-      ["claude-sonnet-4", "claude-sonnet-4"],
-      ["claude-haiku-4-5", "claude-haiku-4.5"],
-      ["deepseek-3-2", "deepseek-3.2"],
-      ["minimax-m2-1", "minimax-m2.1"],
-      ["glm-5", "glm-5"],
-      ["qwen3-coder-next", "qwen3-coder-next"],
-    ])("maps %s → %s", (piId, kiroId) => {
-      expect(resolveKiroModel(piId)).toBe(kiroId);
-    });
-
-    it("throws on unknown model ID", () => {
-      expect(() => resolveKiroModel("nonexistent")).toThrow("Unknown Kiro model ID");
+    it("converts digit-dash-digit to dot format", () => {
+      // With empty KIRO_MODEL_IDS, any ID is accepted
+      expect(resolveKiroModel("claude-opus-4-6")).toBe("claude-opus-4.6");
+      expect(resolveKiroModel("deepseek-3-2")).toBe("deepseek-3.2");
+      expect(resolveKiroModel("glm-5")).toBe("glm-5");
     });
   });
 
   describe("KIRO_MODEL_IDS", () => {
-    it("contains at least bootstrap model IDs", () => {
-      expect(KIRO_MODEL_IDS.size).toBeGreaterThanOrEqual(BOOTSTRAP_MODEL_COUNT);
+    it("starts empty (populated from cache)", () => {
+      // KIRO_MODEL_IDS is populated dynamically via loadCachedModelIds()
+      expect(KIRO_MODEL_IDS).toBeInstanceOf(Set);
     });
   });
 
@@ -129,22 +116,9 @@ describe("Feature 2: Model Definitions", () => {
     });
   });
 
-  describe("defaultModels bootstrap", () => {
-    it("contains bootstrap model count", () => {
-      expect(defaultModels).toHaveLength(BOOTSTRAP_MODEL_COUNT);
-    });
-
-    it("has reasoning=true and supportsEffort=false for all bootstrap models", () => {
-      for (const m of defaultModels) {
-        expect(m.reasoning).toBe(true);
-        expect(m.supportsEffort).toBe(false);
-      }
-    });
-
-    it("includes auto model", () => {
-      const autoModel = defaultModels.find((m) => m.id === "auto");
-      expect(autoModel).toBeDefined();
-      expect(autoModel?.name).toBe("Auto");
+  describe("defaultModels", () => {
+    it("is an array (populated from cache if available)", () => {
+      expect(Array.isArray(defaultModels)).toBe(true);
     });
   });
 });

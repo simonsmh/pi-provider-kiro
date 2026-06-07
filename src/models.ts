@@ -55,39 +55,26 @@ export function buildModelDef(
   };
 }
 
-// Bootstrap model IDs for cold-start before cache populates.
-// These are fallback guesses; actual model list and capabilities come from
-// updateKiroModelsCache() which calls ListAvailableModels.
-// MAINTENANCE: This list should reflect Kiro's current offerings.
-// If you add/remove models here, also update test expectations in:
-//   - test/models.test.ts (BOOTSTRAP_MODEL_COUNT)
-//   - test/registration.test.ts (model count assertions)
-const BOOTSTRAP_MODEL_IDS = [
-  "claude-opus-4-8",
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-sonnet-4-6",
-  "claude-sonnet-4-5",
-  "claude-sonnet-4",
-  "claude-haiku-4-5",
-  "deepseek-3-2",
-  "minimax-m2-1",
-  "glm-5",
-  "qwen3-coder-next",
-  "auto",
-];
-
-export const BOOTSTRAP_MODEL_COUNT = BOOTSTRAP_MODEL_IDS.length; // 12 models
-
 const DEFAULT_BASE_URL = "https://runtime.us-east-1.kiro.dev/";
 
-export const defaultModels: KiroModelDef[] = BOOTSTRAP_MODEL_IDS.map((id) =>
-  buildModelDef(id, DEFAULT_BASE_URL, true, false)
-);
+// Load models from disk cache at startup; empty until first successful auth.
+function loadDefaultModels(): KiroModelDef[] {
+  if (!existsSync(CACHE_PATH)) return [];
+  try {
+    const raw = readFileSync(CACHE_PATH, "utf-8");
+    const data = JSON.parse(raw) as Record<string, any>;
+    for (const entry of Object.values(data)) {
+      const models = Array.isArray(entry) ? entry : entry?.models;
+      if (Array.isArray(models) && models.length > 0) return models;
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+export const defaultModels: KiroModelDef[] = loadDefaultModels();
 
-// Valid Kiro model IDs - API accepts friendly names directly
+// Valid Kiro model IDs — populated from cache
 export const KIRO_MODEL_IDS = new Set<string>(
-  BOOTSTRAP_MODEL_IDS.map((id) => id.replace(/(\d)-(\d)/g, "$1.$2"))
+  defaultModels.map((m) => m.id.replace(/(\d)-(\d)/g, "$1.$2"))
 );
 
 let cachedIdsLoaded = false;
@@ -254,11 +241,10 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
 }
 
 export function resolveKiroModel(modelId: string): string {
-  // Convert pi format (dashes) to kiro format (dots): claude-opus-4-6 -> claude-opus-4.6
-  // Only convert digit-dash-digit patterns (version numbers like 4-6 -> 4.6)
   const kiroId = modelId.replace(/(\d)-(\d)/g, "$1.$2");
   loadCachedModelIds();
-  if (!KIRO_MODEL_IDS.has(kiroId)) {
+  // If cache is empty (first run before auth), accept any ID
+  if (KIRO_MODEL_IDS.size > 0 && !KIRO_MODEL_IDS.has(kiroId)) {
     throw new Error(`Unknown Kiro model ID: ${modelId}`);
   }
   return kiroId;
