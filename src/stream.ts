@@ -238,7 +238,7 @@ export function streamKiro(
       const ep = new URL(endpoint);
       const region = ep.hostname.split(".")[1] || "us-east-1";
       const { isCacheStale, updateKiroModelsCache } = await import("./models.js");
-      if (!process.env.VITEST && isCacheStale(region)) {
+      if (!process.env.VITEST && isCacheStale(region, profileArn)) {
         updateKiroModelsCache(accessToken, region, profileArn).catch(() => {});
       }
 
@@ -379,7 +379,7 @@ export function streamKiro(
           const imgs = extractImages(firstMsg);
           if (imgs.length > 0) currentImages = convertImagesToKiro(imgs as ImageContent[]);
         }
-        const baseModel = getCachedModels(region).find((m) => m.id === model.id) || (model as any);
+        const baseModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) || (model as any);
         const supportsEffort = baseModel?.supportsEffort;
         let additionalModelRequestFields: Record<string, unknown> | undefined;
         if (supportsEffort) {

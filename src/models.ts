@@ -86,8 +86,9 @@ export function loadCachedModelIds(): void {
   if (!existsSync(CACHE_PATH)) return;
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
-    const data = JSON.parse(raw) as Record<string, KiroModelDef[]>;
-    for (const regionModels of Object.values(data)) {
+    const data = JSON.parse(raw) as Record<string, any>;
+    for (const entry of Object.values(data)) {
+      const regionModels = Array.isArray(entry) ? entry : entry?.models;
       if (Array.isArray(regionModels)) {
         for (const m of regionModels) {
           if (m?.id) {
@@ -103,13 +104,23 @@ export function loadCachedModelIds(): void {
   }
 }
 
-export function getCachedModels(region: string): KiroModelDef[] {
+function getCacheKey(region: string, profileArn?: string): string {
+  return profileArn ? `${region}#${profileArn}` : region;
+}
+
+export function getCachedModels(region: string, profileArn?: string): KiroModelDef[] {
+  const key = getCacheKey(region, profileArn);
   if (existsSync(CACHE_PATH)) {
     try {
       const raw = readFileSync(CACHE_PATH, "utf-8");
-      const data = JSON.parse(raw) as Record<string, KiroModelDef[]>;
-      if (data && Array.isArray(data[region])) {
-        return data[region];
+      const data = JSON.parse(raw) as Record<string, any>;
+      if (data && data[key]) {
+        const entry = data[key];
+        if (Array.isArray(entry)) {
+          return entry;
+        } else if (entry && Array.isArray(entry.models)) {
+          return entry.models;
+        }
       }
     } catch {
       // Ignore cache errors
@@ -118,15 +129,26 @@ export function getCachedModels(region: string): KiroModelDef[] {
   return [];
 }
 
-export function isCacheStale(region: string): boolean {
+export function isCacheStale(region: string, profileArn?: string): boolean {
   if (!existsSync(CACHE_PATH)) return true;
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
-    const data = JSON.parse(raw) as Record<string, KiroModelDef[]>;
-    if (!data || !Array.isArray(data[region])) return true;
-    const stat = statSync(CACHE_PATH);
+    const data = JSON.parse(raw) as Record<string, any>;
+    const key = getCacheKey(region, profileArn);
+    if (!data || !data[key]) return true;
+
+    const entry = data[key];
+    let updatedAt = 0;
+    if (Array.isArray(entry)) {
+      // Old format: check file modification time
+      const stat = statSync(CACHE_PATH);
+      updatedAt = stat.mtimeMs;
+    } else if (entry && typeof entry.updatedAt === "number") {
+      updatedAt = entry.updatedAt;
+    }
+
     // Stale if older than 1 hour
-    return Date.now() - stat.mtimeMs > 3600_000;
+    return Date.now() - updatedAt > 3600_000;
   } catch {
     return true;
   }
@@ -197,7 +219,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       });
     }
 
-    let cache: Record<string, KiroModelDef[]> = {};
+    let cache: Record<string, any> = {};
     if (existsSync(CACHE_PATH)) {
       try {
         cache = JSON.parse(readFileSync(CACHE_PATH, "utf-8"));
@@ -206,7 +228,11 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       }
     }
 
-    cache[region] = newModels;
+    const key = getCacheKey(region, profileArn);
+    cache[key] = {
+      updatedAt: Date.now(),
+      models: newModels,
+    };
     mkdirSync(dirname(CACHE_PATH), { recursive: true });
     writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2), "utf-8");
 

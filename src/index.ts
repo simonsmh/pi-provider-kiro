@@ -30,7 +30,7 @@ export default function (pi: ExtensionAPI) {
       getCliCredentials: getKiroCliCredentials,
       modifyModels: (models: Model<Api>[], cred: OAuthCredentials) => {
         const apiRegion = resolveApiRegion((cred as KiroCredentials).region);
-        const cachedKiro = getCachedModels(apiRegion);
+        const cachedKiro = getCachedModels(apiRegion, (cred as KiroCredentials).profileArn);
         const nonKiro = models.filter((m: Model<Api>) => m.provider !== "kiro");
         const modelsToUse = cachedKiro.length > 0 ? cachedKiro : defaultModels;
         const modifiedKiro = modelsToUse.map((m: Model<Api>) => ({

@@ -51,7 +51,7 @@ export async function loginKiro(
     try {
       const { resolveApiRegion, updateKiroModelsCache } = await import("./models.js");
       const region = resolveApiRegion((creds as KiroCredentials).region);
-      updateKiroModelsCache(creds.access, region, (creds as KiroCredentials).profileArn).catch(() => {});
+      await updateKiroModelsCache(creds.access, region, (creds as KiroCredentials).profileArn);
     } catch {
       // Ignore cache errors
     }
@@ -222,7 +222,7 @@ export async function refreshKiroToken(credentials: OAuthCredentials): Promise<O
     try {
       const { resolveApiRegion, updateKiroModelsCache } = await import("./models.js");
       const region = resolveApiRegion((refreshed as KiroCredentials).region);
-      updateKiroModelsCache(refreshed.access, region, (refreshed as KiroCredentials).profileArn).catch(() => {});
+      await updateKiroModelsCache(refreshed.access, region, (refreshed as KiroCredentials).profileArn);
     } catch {
       // Ignore cache errors
     }
