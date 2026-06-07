@@ -26,6 +26,7 @@ vi.mock("../src/models.js", async (importOriginal) => {
         baseUrl: "https://runtime.us-east-1.kiro.dev/",
         reasoning: true,
         supportsEffort: true,
+        thinkingLevelMap: { off: "low", minimal: "medium", low: "high", medium: "xhigh", high: "max" },
         input: ["text" as const],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 1000000,
@@ -187,6 +188,8 @@ describe("Feature 9: Streaming Integration", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
     // First call is ListAvailableProfiles
     expect(mockFetch.mock.calls[0][1].headers["X-Amz-Target"]).toBe("AmazonCodeWhispererService.ListAvailableProfiles");
+    // ...and it targets the management plane, not the runtime endpoint
+    expect(mockFetch.mock.calls[0][0]).toBe("https://management.us-east-1.kiro.dev/");
     // Second call includes profileArn in the body
     const body = JSON.parse(mockFetch.mock.calls[1][1].body);
     expect(body.profileArn).toBe(testArn);
@@ -2348,21 +2351,55 @@ describe("Feature 9: Streaming Integration", () => {
     const mockFetch = mockFetchOk('{"content":"Done."}');
     vi.stubGlobal("fetch", mockFetch);
 
-    // Test different reasoning levels mapping
+    // The mocked cached model is Opus, which carries a full thinkingLevelMap
+    // remapping pi's ladder (including "off") onto Opus's 5 effort tiers.
     const cases = [
-      { input: "minimal", expectedEffort: "low", expectedThinkingType: "adaptive" },
-      { input: "low", expectedEffort: "medium", expectedThinkingType: "adaptive" },
-      { input: "medium", expectedEffort: "high", expectedThinkingType: "adaptive" },
-      { input: "high", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
-      { input: "xhigh", expectedEffort: "max", expectedThinkingType: "adaptive" },
+      { input: "off", expectedEffort: "low", expectedThinkingType: "adaptive" },
+      { input: "minimal", expectedEffort: "medium", expectedThinkingType: "adaptive" },
+      { input: "low", expectedEffort: "high", expectedThinkingType: "adaptive" },
+      { input: "medium", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
+      { input: "high", expectedEffort: "max", expectedThinkingType: "adaptive" },
+      { input: "xhigh", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
       { input: "max", expectedEffort: "max", expectedThinkingType: "adaptive" },
-      { input: "off", expectedEffort: undefined, expectedThinkingType: "disabled" },
       { input: false, expectedEffort: undefined, expectedThinkingType: "disabled" },
+      { input: undefined, expectedEffort: "medium", expectedThinkingType: "adaptive" },
     ];
 
     for (const c of cases) {
       mockFetch.mockClear();
       const model = makeModel({ id: "claude-opus-4-8", reasoning: true });
+      const stream = streamKiro(model, makeContext(), { apiKey: "tok", reasoning: c.input as any });
+      await collect(stream);
+
+      const requestBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(requestBody.additionalModelRequestFields?.thinking?.type).toBe(c.expectedThinkingType);
+      if (c.expectedEffort) {
+        expect(requestBody.additionalModelRequestFields?.output_config?.effort).toBe(c.expectedEffort);
+      } else {
+        expect(requestBody.additionalModelRequestFields?.output_config).toBeUndefined();
+      }
+    }
+
+    vi.unstubAllGlobals();
+  });
+
+  it("uses 1:1 base effort mapping for models without a thinkingLevelMap", async () => {
+    const mockFetch = mockFetchOk('{"content":"Done."}');
+    vi.stubGlobal("fetch", mockFetch);
+
+    // Non-Opus model: not present in the mocked cache, so baseModel falls back
+    // to the passed model (no thinkingLevelMap) -> base ladder applies as-is.
+    const cases = [
+      { input: "off", expectedEffort: undefined, expectedThinkingType: "disabled" },
+      { input: "minimal", expectedEffort: "low", expectedThinkingType: "adaptive" },
+      { input: "low", expectedEffort: "low", expectedThinkingType: "adaptive" },
+      { input: "medium", expectedEffort: "medium", expectedThinkingType: "adaptive" },
+      { input: "high", expectedEffort: "high", expectedThinkingType: "adaptive" },
+    ];
+
+    for (const c of cases) {
+      mockFetch.mockClear();
+      const model = makeModel({ id: "claude-sonnet-4-5", reasoning: true, supportsEffort: true } as any);
       const stream = streamKiro(model, makeContext(), { apiKey: "tok", reasoning: c.input as any });
       await collect(stream);
 

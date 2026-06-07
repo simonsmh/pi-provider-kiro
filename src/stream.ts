@@ -123,12 +123,14 @@ async function resolveProfileArn(accessToken: string, endpoint: string): Promise
   if (profileArnCache.has(endpoint)) return profileArnCache.get(endpoint);
   if (profileArnPending.has(endpoint)) return undefined;
   try {
-    const ep = new URL(endpoint);
-    ep.pathname = ep.pathname.replace(/\/generateAssistantResponse\/?$/, "/");
-    ep.search = "";
-    ep.hash = "";
+    // ListAvailableProfiles is a management-plane operation. Hitting the
+    // runtime endpoint (runtime.{region}.kiro.dev) returns 400 Bad Request —
+    // it must go to management.{region}.kiro.dev, matching usage.ts/models.ts.
+    const runtime = new URL(endpoint);
+    const region = runtime.hostname.split(".")[1] || "us-east-1";
+    const managementUrl = `https://management.${region}.kiro.dev/`;
 
-    const r = await fetch(ep.toString(), {
+    const r = await fetch(managementUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-amz-json-1.0",
@@ -243,7 +245,18 @@ export function streamKiro(
       }
 
       const kiroModelId = resolveKiroModel(model.id);
-      const thinkingEnabled = (options?.reasoning as any) !== false && (options?.reasoning as any) !== "off" && (!!options?.reasoning || model.reasoning);
+      // A model may opt into reasoning even when pi requests "off" by defining
+      // an "off" entry in its thinkingLevelMap (e.g. Opus uses its full effort
+      // ladder, where pi's "off" maps to the lowest effort tier rather than
+      // disabling thinking entirely).
+      const resolvedModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) || (model as any);
+      const modelThinkingLevelMap =
+        (resolvedModel?.thinkingLevelMap as Record<string, string> | undefined) ?? {};
+      const offOverridesToEffort = "off" in modelThinkingLevelMap;
+      const thinkingEnabled =
+        (options?.reasoning as any) !== false &&
+        ((options?.reasoning as any) !== "off" || offOverridesToEffort) &&
+        (!!options?.reasoning || model.reasoning);
       debugLog("request.init", {
         endpoint,
         model: model.id,
@@ -395,17 +408,24 @@ export function streamKiro(
             let mappedEffort = "medium";
             if (typeof rawReasoning === "string") {
               const cleanReasoning = rawReasoning.trim().toLowerCase();
-              const mapTable: Record<string, string> = {
+              // Base ladder: pi reasoning level -> Kiro effort, 1:1 for the
+              // levels pi actually exposes (off/minimal/low/medium/high).
+              const baseMap: Record<string, string> = {
                 minimal: "low",
-                low: "medium",
-                medium: "high",
-                high: "xhigh",
-                xhigh: "max",
+                low: "low",
+                medium: "medium",
+                high: "high",
+                xhigh: "xhigh",
+                max: "max",
               };
-              if (mapTable[cleanReasoning]) {
-                mappedEffort = mapTable[cleanReasoning];
-              } else if (["low", "medium", "high", "xhigh", "max"].includes(cleanReasoning)) {
-                mappedEffort = cleanReasoning;
+              // Per-model override: models that support the extended effort
+              // tiers (e.g. Opus xhigh/max) remap pi's capped ladder upward so
+              // users can reach those tiers, since pi tops out at "high".
+              const levelMap = (baseModel?.thinkingLevelMap as Record<string, string> | undefined) ?? {};
+              if (levelMap[cleanReasoning]) {
+                mappedEffort = levelMap[cleanReasoning];
+              } else if (baseMap[cleanReasoning]) {
+                mappedEffort = baseMap[cleanReasoning];
               }
             }
             additionalModelRequestFields.output_config = {

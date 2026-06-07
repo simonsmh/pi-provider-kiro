@@ -16,7 +16,7 @@ export interface KiroModelDef {
   baseUrl: string;
   reasoning: boolean;
   supportsEffort: boolean;
-  thinkingLevelMap?: { xhigh: string };
+  thinkingLevelMap?: Record<string, string>;
   input: ("text" | "image")[];
   cost: typeof ZERO_COST;
   contextWindow: number;
@@ -44,7 +44,9 @@ export function buildModelDef(
     baseUrl,
     reasoning: hasThinkingSchema,
     supportsEffort: hasEffortSchema,
-    ...(isOpus && hasEffortSchema ? { thinkingLevelMap: { xhigh: "xhigh" } } : {}),
+    ...(isOpus && hasEffortSchema
+      ? { thinkingLevelMap: { off: "low", minimal: "medium", low: "high", medium: "xhigh", high: "max" } }
+      : {}),
     input: (isClaude || piId === "auto") ? ["text", "image"] : ["text"],
     cost: ZERO_COST,
     contextWindow: isClaude || piId === "auto" ? 1000000 : 200000,
