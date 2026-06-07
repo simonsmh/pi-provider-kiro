@@ -67,6 +67,13 @@ describe("Feature 8: Stream Event Parsing", () => {
       expect(e?.type === "usage" && e.data.outputTokens).toBe(50);
     });
 
+    it("parses credit usage event", () => {
+      const e = parseKiroEvent({ unit: "credit", unitPlural: "credits", usage: 0.0612 });
+      expect(e?.type).toBe("creditUsage");
+      expect(e?.type === "creditUsage" && e.data.credits).toBe(0.0612);
+      expect(e?.type === "creditUsage" && e.data.unit).toBe("credit");
+    });
+
     it("returns null for unrecognized shape", () => {
       expect(parseKiroEvent({ unknown: true })).toBeNull();
     });

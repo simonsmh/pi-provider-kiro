@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { KiroCredentials } from "../src/oauth.js";
 import { refreshKiroToken } from "../src/oauth.js";
+import { getKiroCliCredentialsAllowExpired } from "../src/kiro-cli.js";
 
 // Mock kiro-cli to prevent fallback to real credentials
 vi.mock("../src/kiro-cli.js", () => ({
@@ -9,6 +10,12 @@ vi.mock("../src/kiro-cli.js", () => ({
   getKiroCliSocialToken: vi.fn(() => undefined),
   getKiroCliSocialTokenAllowExpired: vi.fn(() => undefined),
   saveKiroCliCredentials: vi.fn(),
+}));
+
+// Mock kiro-ide to prevent fallback to real credentials
+vi.mock("../src/kiro-ide.js", () => ({
+  getKiroIdeCredentials: vi.fn(() => undefined),
+  getKiroIdeCredentialsAllowExpired: vi.fn(() => undefined),
 }));
 
 describe("Feature 3: OAuth — Token Refresh", () => {
@@ -115,7 +122,6 @@ describe("Feature 3: OAuth — Token Refresh", () => {
     });
 
     it("uses expired kiro-cli creds as fallback when direct refresh fails", async () => {
-      const { getKiroCliCredentialsAllowExpired } = await import("../src/kiro-cli.js");
       vi.mocked(getKiroCliCredentialsAllowExpired).mockReturnValueOnce({
         refresh: "cli_rt|cli_cid|cli_csec|idc",
         access: "cli_at",
@@ -141,7 +147,6 @@ describe("Feature 3: OAuth — Token Refresh", () => {
     });
 
     it("falls through to graceful degradation when expired creds refresh also fails", async () => {
-      const { getKiroCliCredentialsAllowExpired } = await import("../src/kiro-cli.js");
       vi.mocked(getKiroCliCredentialsAllowExpired).mockReturnValueOnce({
         refresh: "cli_rt|cli_cid|cli_csec|idc",
         access: "cli_at",

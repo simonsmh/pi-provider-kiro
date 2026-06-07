@@ -152,6 +152,7 @@ function tryKiroCliToken(
       region,
       authMethod: "desktop",
       profileArn: tokenData.profile_arn || tokenData.profileArn,
+      startUrl: tokenData.start_url || tokenData.startUrl,
     };
   }
 
@@ -179,6 +180,8 @@ function tryKiroCliToken(
     clientSecret,
     region,
     authMethod: "idc",
+    profileArn: tokenData.profile_arn || tokenData.profileArn,
+    startUrl: tokenData.start_url || tokenData.startUrl,
   };
 }
 
@@ -242,6 +245,7 @@ export function saveKiroCliCredentials(creds: KiroCredentials): void {
       tokenData.expires_at = expiresAt;
       if (creds.region) tokenData.region = creds.region;
       if (creds.profileArn) tokenData.profile_arn = creds.profileArn;
+      if (creds.startUrl) tokenData.start_url = creds.startUrl;
 
       const escaped = JSON.stringify(tokenData).replace(/'/g, "''");
       const sql = `UPDATE auth_kv SET value = '${escaped}' WHERE key = '${key}';`;

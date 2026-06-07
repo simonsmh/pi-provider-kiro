@@ -9,6 +9,7 @@ export type KiroStreamEvent =
   | { type: "contextUsage"; data: { contextUsagePercentage: number } }
   | { type: "followupPrompt"; data: string }
   | { type: "usage"; data: { inputTokens?: number; outputTokens?: number } }
+  | { type: "creditUsage"; data: { credits: number; unit: string } }
   | { type: "error"; data: { error: string; message?: string } };
 
 export function findJsonEnd(text: string, start: number): number {
@@ -76,6 +77,12 @@ export function parseKiroEvent(parsed: Record<string, unknown>): KiroStreamEvent
     const error = (parsed.error || parsed.Error || "unknown") as string;
     const message = (parsed.message || parsed.Message || parsed.reason) as string | undefined;
     return { type: "error", data: { error: typeof error === "string" ? error : JSON.stringify(error), message } };
+  }
+  if (parsed.unit !== undefined && parsed.usage !== undefined) {
+    return {
+      type: "creditUsage",
+      data: { credits: parsed.usage as number, unit: parsed.unit as string },
+    };
   }
   if (parsed.usage !== undefined) {
     const u = parsed.usage as Record<string, unknown>;

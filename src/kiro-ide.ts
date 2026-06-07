@@ -61,6 +61,13 @@ function readKiroIdeToken(allowExpired: boolean): KiroCredentials | undefined {
       }
     }
 
+    const startUrl =
+      tokenData.region === "us-east-1" && tokenData.provider?.toLowerCase() === "enterprise"
+        ? undefined
+        : tokenData.region === "us-east-1"
+          ? "https://view.awsapps.com/start"
+          : undefined;
+
     return {
       // Pack into the same pipe-delimited format used by the rest of the refresh chain
       refresh: `${tokenData.refreshToken}|${clientId}|${clientSecret}|idc`,
@@ -71,6 +78,7 @@ function readKiroIdeToken(allowExpired: boolean): KiroCredentials | undefined {
       clientSecret,
       region,
       authMethod: "idc",
+      startUrl,
     };
   } catch {
     return undefined;

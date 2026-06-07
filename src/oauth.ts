@@ -9,7 +9,7 @@
 
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { getKiroIdeCredentials, getKiroIdeCredentialsAllowExpired } from "./kiro-ide.js";
-import { interactiveLogin, loginViaKiroCli } from "./login.js";
+import { interactiveLogin } from "./login.js";
 
 export const SSO_OIDC_ENDPOINT = "https://oidc.us-east-1.amazonaws.com";
 export const BUILDER_ID_START_URL = "https://view.awsapps.com/start";
@@ -32,6 +32,7 @@ export interface KiroCredentials extends OAuthCredentials {
   authMethod: KiroAuthMethod;
   /** Required for Google/GitHub social profiles; ListAvailableProfiles may return empty for these tokens. */
   profileArn?: string;
+  startUrl?: string;
 }
 
 /**
@@ -67,14 +68,31 @@ async function loginKiroInternal(
 
   // If user explicitly wants social login, delegate to kiro-cli
   if (preferredMethod === "google" || preferredMethod === "github") {
-    return loginViaKiroCli(callbacks, preferredMethod);
+    const { runSocialLoginFlow } = await import("./login.js");
+    return runSocialLoginFlow(callbacks, preferredMethod);
+  }
+
+  const hasCached = !!(
+    getKiroIdeCredentials() ||
+    getKiroCliSocialToken() ||
+    getKiroCliCredentials() ||
+    getKiroIdeCredentialsAllowExpired() ||
+    getKiroCliCredentialsAllowExpired()
+  );
+
+  if (preferredMethod === "auto") {
+    const choice = await interactiveLogin(callbacks, hasCached);
+    if (choice === "use-cached-credentials") {
+      return useCachedCascade(callbacks);
+    }
+    return choice;
   }
 
   // 1. Kiro IDE token (~/.aws/sso/cache/kiro-auth-token.json)
   //    Checked first because the IDE keeps it continuously fresh and it already
   //    covers IAM Identity Center logins — no extra prompts needed.
   const ideCreds = getKiroIdeCredentials();
-  if (ideCreds && (preferredMethod === "auto" || preferredMethod === "builder-id")) {
+  if (ideCreds && preferredMethod === "builder-id") {
     (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
       "Using existing Kiro IDE credentials",
     );
@@ -87,7 +105,7 @@ async function loginKiroInternal(
     cliCreds = getKiroCliCredentials();
   }
 
-  if (cliCreds && (preferredMethod === "auto" || cliCreds.authMethod === "idc")) {
+  if (cliCreds && (preferredMethod === "builder-id" || cliCreds.authMethod === "idc")) {
     (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
       cliCreds.authMethod === "desktop"
         ? "Using existing kiro-cli social credentials"
@@ -124,8 +142,66 @@ async function loginKiroInternal(
     }
   }
 
-  // Fall back to interactive login (Feature 10)
-  return interactiveLogin(callbacks);
+  const choice = await interactiveLogin(callbacks, hasCached);
+  if (choice === "use-cached-credentials") {
+    return useCachedCascade(callbacks);
+  }
+  return choice;
+}
+
+async function useCachedCascade(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+  const { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, saveKiroCliCredentials, getKiroCliSocialToken } =
+    await import("./kiro-cli.js");
+
+  const ideCreds = getKiroIdeCredentials();
+  if (ideCreds) {
+    (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
+      "Using existing Kiro IDE credentials",
+    );
+    return ideCreds;
+  }
+
+  let cliCreds = getKiroCliSocialToken();
+  if (!cliCreds) {
+    cliCreds = getKiroCliCredentials();
+  }
+
+  if (cliCreds) {
+    (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
+      cliCreds.authMethod === "desktop"
+        ? "Using existing kiro-cli social credentials"
+        : "Using existing kiro-cli credentials",
+    );
+    return cliCreds;
+  }
+
+  const expiredIdeCreds = getKiroIdeCredentialsAllowExpired();
+  if (expiredIdeCreds) {
+    try {
+      (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
+        "Refreshing Kiro IDE credentials...",
+      );
+      return await refreshKiroTokenDirect(expiredIdeCreds);
+    } catch {
+      // Ignore
+    }
+  }
+
+  const expiredCreds = getKiroCliCredentialsAllowExpired();
+  if (expiredCreds) {
+    try {
+      (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
+        "Refreshing expired kiro-cli credentials...",
+      );
+      const refreshed = await refreshKiroTokenDirect(expiredCreds);
+      saveKiroCliCredentials(refreshed as KiroCredentials);
+      return refreshed;
+    } catch {
+      // Ignore
+    }
+  }
+
+  throw new Error("No valid cached credentials found");
 }
 
 /**
@@ -242,6 +318,7 @@ async function refreshKiroTokenDirect(credentials: OAuthCredentials): Promise<OA
       region,
       authMethod: "desktop" as KiroAuthMethod,
       profileArn: data.profileArn || (credentials as KiroCredentials).profileArn,
+      startUrl: (credentials as KiroCredentials).startUrl,
     };
   }
 
@@ -264,5 +341,7 @@ async function refreshKiroTokenDirect(credentials: OAuthCredentials): Promise<OA
     clientSecret: clientSecret,
     region,
     authMethod: "idc" as KiroAuthMethod,
+    profileArn: (credentials as KiroCredentials).profileArn,
+    startUrl: (credentials as KiroCredentials).startUrl,
   };
 }

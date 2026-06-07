@@ -131,7 +131,7 @@ describe("Feature 1: Extension Registration", () => {
 
     expect(modified.length).toBe(1);
     expect(modified[0].id).toBe("claude-sonnet-4-6");
-    expect(modified[0].baseUrl).toBe("https://q.eu-central-1.amazonaws.com/generateAssistantResponse");
+    expect(modified[0].baseUrl).toBe("https://runtime.eu-central-1.kiro.dev/");
   });
 
   it("modifyModels preserves non-kiro provider models", async () => {

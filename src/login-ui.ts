@@ -8,12 +8,12 @@
 
 import { DynamicBorder, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, Input, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 
 export type LoginChoice =
-  | { method: "builder-id" }
-  | { method: "idc"; startUrl: string }
-  | { method: "google" }
-  | { method: "github" }
+  | { method: "cached" }
+  | { method: "personal" }
+  | { method: "idc"; startUrl: string; region?: string }
   | null; // cancelled
 
 let _ctx: ExtensionContext | undefined;
@@ -22,23 +22,31 @@ export function setExtensionContext(ctx: ExtensionContext) {
   _ctx = ctx;
 }
 
+export function hasExtensionContext(): boolean {
+  return _ctx !== undefined;
+}
+
 /**
  * Show the login method selection UI using pi's native TUI components.
  * Returns the user's choice or null if cancelled.
  */
-export async function showLoginUI(): Promise<LoginChoice> {
+export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
   if (!_ctx) return null;
   const ctx = _ctx;
 
   return ctx.ui.custom<LoginChoice>((tui, theme, _kb, done) => {
-    const items: SelectItem[] = [
-      { value: "builder-id", label: "Builder ID", description: "AWS Builder ID (default)" },
-      { value: "idc", label: "Your organization", description: "IAM Identity Center (SSO)" },
-      { value: "google", label: "Google", description: "Social login via kiro-cli" },
-      { value: "github", label: "GitHub", description: "Social login via kiro-cli" },
-    ];
+    const mainItems: SelectItem[] = [];
+    if (hasCached) {
+      mainItems.push({ value: "cached", label: "Use existing credentials", description: "Use cached/IDE credentials" });
+    }
+    mainItems.push(
+      { value: "personal", label: "Web Login", description: "Sign in via browser (Google, GitHub, Builder ID)" },
+      { value: "idc", label: "Device Code", description: "IAM Identity Center" },
+    );
 
-    let phase: "select" | "url" = "select";
+    let phase: "select" | "url" | "region" = "select";
+    let enteredStartUrl = "";
+
     const container = new Container();
     const border = new DynamicBorder((s: string) => theme.fg("accent", s));
     const title = new Text(theme.fg("accent", theme.bold("Kiro Login")), 1, 0);
@@ -46,7 +54,7 @@ export async function showLoginUI(): Promise<LoginChoice> {
     const borderBottom = new DynamicBorder((s: string) => theme.fg("accent", s));
 
     // Phase 1: SelectList
-    const selectList = new SelectList(items, items.length, {
+    const selectList = new SelectList(mainItems, mainItems.length, {
       selectedPrefix: (t: string) => theme.fg("accent", t),
       selectedText: (t: string) => theme.fg("accent", t),
       description: (t: string) => theme.fg("muted", t),
@@ -57,8 +65,10 @@ export async function showLoginUI(): Promise<LoginChoice> {
     selectList.onSelect = (item) => {
       if (item.value === "idc") {
         switchToUrlInput();
+      } else if (item.value === "personal") {
+        done({ method: "personal" });
       } else {
-        done({ method: item.value as "builder-id" | "google" | "github" });
+        done({ method: item.value as "cached" });
       }
     };
     selectList.onCancel = () => done(null);
@@ -71,11 +81,25 @@ export async function showLoginUI(): Promise<LoginChoice> {
     urlInput.onSubmit = (value) => {
       const trimmed = value.trim();
       if (trimmed?.startsWith("http")) {
-        done({ method: "idc", startUrl: trimmed });
+        enteredStartUrl = trimmed;
+        switchToRegionInput();
       }
     };
     urlInput.onEscape = () => {
       switchToSelect();
+    };
+
+    // Phase 3: Region Input
+    const regionLabel = new Text("SSO Region (e.g. us-east-1, or blank to auto-detect)", 1, 0);
+    const regionInput = new Input();
+    const regionHint = new Text(theme.fg("dim", "enter submit • esc back"), 1, 0);
+
+    regionInput.onSubmit = (value) => {
+      const region = value.trim();
+      done({ method: "idc", startUrl: enteredStartUrl, region: region || undefined });
+    };
+    regionInput.onEscape = () => {
+      switchToUrlInput();
     };
 
     function switchToUrlInput() {
@@ -90,9 +114,22 @@ export async function showLoginUI(): Promise<LoginChoice> {
       tui.requestRender();
     }
 
+    function switchToRegionInput() {
+      phase = "region";
+      container.clear();
+      container.addChild(border);
+      container.addChild(new Text(theme.fg("accent", theme.bold("IAM Identity Center Region")), 1, 0));
+      container.addChild(regionLabel);
+      container.addChild(regionInput);
+      container.addChild(regionHint);
+      container.addChild(borderBottom);
+      tui.requestRender();
+    }
+
     function switchToSelect() {
       phase = "select";
       urlInput.setValue("");
+      regionInput.setValue("");
       container.clear();
       container.addChild(border);
       container.addChild(title);
@@ -115,10 +152,100 @@ export async function showLoginUI(): Promise<LoginChoice> {
       handleInput(data: string) {
         if (phase === "select") {
           selectList.handleInput(data);
-        } else {
+        } else if (phase === "url") {
           urlInput.handleInput(data);
+        } else if (phase === "region") {
+          regionInput.handleInput(data);
         }
         tui.requestRender();
+      },
+    };
+  });
+}
+
+/**
+ * Show a waiting UI wrapper with an Escape return loop logic.
+ * The user can press Escape or 'q' to abort the current login flow immediately.
+ */
+export async function showWaitingUI(
+  outerCallbacks: OAuthLoginCallbacks,
+  choice: Exclude<LoginChoice, null>,
+  runAuth: (mergedCallbacks: OAuthLoginCallbacks) => Promise<OAuthCredentials>
+): Promise<OAuthCredentials | null> {
+  if (!_ctx) {
+    return runAuth(outerCallbacks);
+  }
+  const ctx = _ctx;
+
+  return ctx.ui.custom<OAuthCredentials | null>((tui, theme, _kb, done) => {
+    const container = new Container();
+    const border = new DynamicBorder((s: string) => theme.fg("accent", s));
+    const title = new Text(theme.fg("accent", theme.bold("Kiro Login - Authorization")), 1, 0);
+    const borderBottom = new DynamicBorder((s: string) => theme.fg("accent", s));
+
+    const statusText = new Text("Initiating login flow...", 1, 0);
+    const urlText = new Text("", 1, 0);
+    const instructionsText = new Text("", 1, 0);
+    const hint = new Text(theme.fg("dim", "esc cancel / back"), 1, 0);
+
+    container.addChild(border);
+    container.addChild(title);
+    container.addChild(statusText);
+    container.addChild(urlText);
+    container.addChild(instructionsText);
+    container.addChild(hint);
+    container.addChild(borderBottom);
+
+    const abortCtrl = new AbortController();
+    let onAuthCalled = false;
+
+    const mergedCallbacks: OAuthLoginCallbacks = {
+      ...outerCallbacks,
+      onProgress: (msg: string) => {
+        outerCallbacks.onProgress?.(msg);
+        statusText.setText(msg);
+        tui.requestRender();
+      },
+      onAuth: (info: { url: string; instructions?: string }) => {
+        if (!onAuthCalled) {
+          onAuthCalled = true;
+          outerCallbacks.onAuth?.(info);
+        }
+        urlText.setText(`URL: ${info.url}`);
+        instructionsText.setText(info.instructions || "");
+        tui.requestRender();
+      },
+      signal: abortCtrl.signal,
+    };
+
+    runAuth(mergedCallbacks).then(
+      (creds) => {
+        done(creds);
+      },
+      (err) => {
+        if (abortCtrl.signal.aborted) {
+          done(null);
+        } else {
+          statusText.setText(theme.fg("warning", `Error: ${err.message || err}`));
+          tui.requestRender();
+          setTimeout(() => done(null), 3000);
+        }
+      }
+    );
+
+    return {
+      render(width: number) {
+        return container.render(width);
+      },
+      invalidate() {
+        container.invalidate();
+      },
+      handleInput(data: string) {
+        // Escape key (standalone 0x1B) or 'q' to cancel
+        if ((data.length === 1 && data.charCodeAt(0) === 0x1b) || data === "q") {
+          abortCtrl.abort();
+          done(null);
+        }
       },
     };
   });
