@@ -600,6 +600,17 @@ export function streamKiro(
                 receivedContextUsage = true;
                 break;
               }
+              case "creditUsage": {
+                const credits = event.data.credits;
+                output.usage.cost = {
+                  input: 0,
+                  output: 0,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                  total: credits / 25,
+                };
+                break;
+              }
               case "content": {
                 if (event.data === lastContentData) continue;
                 lastContentData = event.data;
@@ -726,11 +737,13 @@ export function streamKiro(
         if (usageEvent?.inputTokens !== undefined) output.usage.input = usageEvent.inputTokens;
         output.usage.output = usageEvent?.outputTokens ?? countTokens(totalContent);
         output.usage.totalTokens = output.usage.input + output.usage.output;
-        try {
-          PiAi.calculateCost(model, output.usage);
-        } catch {
-          // Model might not have cost info, use zeros
-          output.usage.cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+        if (!output.usage.cost || output.usage.cost.total === 0) {
+          try {
+            PiAi.calculateCost(model, output.usage);
+          } catch {
+            // Model might not have cost info, use zeros
+            output.usage.cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+          }
         }
         // Detect degenerate responses: the API returned 200 but produced no
         // usable content at all — no text and no tool calls (not even broken

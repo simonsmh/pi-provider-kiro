@@ -1759,6 +1759,24 @@ describe("Feature 9: Streaming Integration", () => {
     vi.unstubAllGlobals();
   });
 
+  it("parses creditUsage event and calculates correct USD cost", async () => {
+    const mockFetch = mockFetchChunked([
+      '{"content":"Hello"}',
+      '{"unit":"credit","unitPlural":"credits","usage":0.061296}',
+      '{"contextUsagePercentage":10}',
+    ]);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const stream = streamKiro(makeModel(), makeContext(), { apiKey: "tok" });
+    const events = await collect(stream);
+    const done = events.find((e) => e.type === "done");
+    const msg = done?.type === "done" ? done.message : undefined;
+
+    expect(msg?.usage.cost?.total).toBeCloseTo(0.061296 / 25, 6);
+
+    vi.unstubAllGlobals();
+  });
+
   // =========================================================================
   // Truncation recovery (Task 4.1)
   // =========================================================================
