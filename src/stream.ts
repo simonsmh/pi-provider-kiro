@@ -243,7 +243,7 @@ export function streamKiro(
       }
 
       const kiroModelId = resolveKiroModel(model.id);
-      const thinkingEnabled = !!options?.reasoning || model.reasoning;
+      const thinkingEnabled = (options?.reasoning as any) !== false && (options?.reasoning as any) !== "off" && (!!options?.reasoning || model.reasoning);
       debugLog("request.init", {
         endpoint,
         model: model.id,
@@ -381,23 +381,37 @@ export function streamKiro(
         }
         const baseModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) || (model as any);
         const supportsEffort = baseModel?.supportsEffort;
+        const supportsThinking = baseModel?.reasoning || supportsEffort;
         let additionalModelRequestFields: Record<string, unknown> | undefined;
-        if (supportsEffort) {
-          const effortVal = typeof options?.reasoning === "string" ? options.reasoning : undefined;
-          const mappedEffort = effortVal && ["low", "medium", "high", "xhigh", "max"].includes(effortVal)
-            ? effortVal
-            : options?.reasoning === "xhigh" ? "max" : "medium";
-
+        if (supportsThinking) {
           additionalModelRequestFields = {
             thinking: {
               type: thinkingEnabled ? "adaptive" : "disabled",
             },
-            ...(thinkingEnabled ? {
-              output_config: {
-                effort: mappedEffort,
-              },
-            } : {}),
           };
+
+          if (supportsEffort && thinkingEnabled) {
+            const rawReasoning = options?.reasoning;
+            let mappedEffort = "medium";
+            if (typeof rawReasoning === "string") {
+              const cleanReasoning = rawReasoning.trim().toLowerCase();
+              const mapTable: Record<string, string> = {
+                minimal: "low",
+                low: "medium",
+                medium: "high",
+                high: "xhigh",
+                xhigh: "max",
+              };
+              if (mapTable[cleanReasoning]) {
+                mappedEffort = mapTable[cleanReasoning];
+              } else if (["low", "medium", "high", "xhigh", "max"].includes(cleanReasoning)) {
+                mappedEffort = cleanReasoning;
+              }
+            }
+            additionalModelRequestFields.output_config = {
+              effort: mappedEffort,
+            };
+          }
         }
 
         // kiro-cli does not enforce alternation — the API accepts

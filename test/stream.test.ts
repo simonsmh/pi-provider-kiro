@@ -13,6 +13,28 @@ import { capacityRetryConfig, retryConfig } from "../src/retry.js";
 import { resetProfileArnCache, streamKiro } from "../src/stream.js";
 import type { KiroHistoryEntry } from "../src/transform.js";
 
+vi.mock("../src/models.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/models.js")>();
+  return {
+    ...actual,
+    getCachedModels: vi.fn(() => [
+      {
+        id: "claude-opus-4-8",
+        name: "Claude Opus 4 8",
+        api: "kiro-api" as const,
+        provider: "kiro" as const,
+        baseUrl: "https://runtime.us-east-1.kiro.dev/",
+        reasoning: true,
+        supportsEffort: true,
+        input: ["text" as const],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1000000,
+        maxTokens: 128000,
+      }
+    ]),
+  };
+});
+
 const ts = Date.now();
 const zeroUsage = {
   input: 0,
@@ -2318,6 +2340,40 @@ describe("Feature 9: Streaming Integration", () => {
         (h.userInputMessage && /^(Continue|\.)$/i.test(h.userInputMessage.content)),
     );
     expect(badPadding).toHaveLength(0);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("maps thinking levels and effort correctly in GenerateAssistantResponse request body", async () => {
+    const mockFetch = mockFetchOk('{"content":"Done."}');
+    vi.stubGlobal("fetch", mockFetch);
+
+    // Test different reasoning levels mapping
+    const cases = [
+      { input: "minimal", expectedEffort: "low", expectedThinkingType: "adaptive" },
+      { input: "low", expectedEffort: "medium", expectedThinkingType: "adaptive" },
+      { input: "medium", expectedEffort: "high", expectedThinkingType: "adaptive" },
+      { input: "high", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
+      { input: "xhigh", expectedEffort: "max", expectedThinkingType: "adaptive" },
+      { input: "max", expectedEffort: "max", expectedThinkingType: "adaptive" },
+      { input: "off", expectedEffort: undefined, expectedThinkingType: "disabled" },
+      { input: false, expectedEffort: undefined, expectedThinkingType: "disabled" },
+    ];
+
+    for (const c of cases) {
+      mockFetch.mockClear();
+      const model = makeModel({ id: "claude-opus-4-8", reasoning: true });
+      const stream = streamKiro(model, makeContext(), { apiKey: "tok", reasoning: c.input as any });
+      await collect(stream);
+
+      const requestBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(requestBody.additionalModelRequestFields?.thinking?.type).toBe(c.expectedThinkingType);
+      if (c.expectedEffort) {
+        expect(requestBody.additionalModelRequestFields?.output_config?.effort).toBe(c.expectedEffort);
+      } else {
+        expect(requestBody.additionalModelRequestFields?.output_config).toBeUndefined();
+      }
+    }
 
     vi.unstubAllGlobals();
   });
