@@ -1,10 +1,10 @@
 // Feature 2: Model Definitions
 
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
-const CACHE_PATH = join(homedir(), ".kiro-models-cache.json");
+const CACHE_PATH = join(homedir(), ".pi", "agent", "kiro-models-cache.json");
 
 export const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
@@ -207,6 +207,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
     }
 
     cache[region] = newModels;
+    mkdirSync(dirname(CACHE_PATH), { recursive: true });
     writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2), "utf-8");
 
     cachedIdsLoaded = false;
