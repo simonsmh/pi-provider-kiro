@@ -6,7 +6,7 @@ import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getKiroCliCredentials } from "./kiro-cli.js";
 import { setExtensionContext } from "./login-ui.js";
-import { getCachedModels, kiroModels, resolveApiRegion } from "./models.js";
+import { getCachedModels, defaultModels, resolveApiRegion } from "./models.js";
 import type { KiroCredentials } from "./oauth.js";
 import { loginKiro, refreshKiroToken } from "./oauth.js";
 import { streamKiro } from "./stream.js";
@@ -20,7 +20,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerProvider("kiro", {
     baseUrl: "https://runtime.us-east-1.kiro.dev/",
     api: "kiro-api",
-    models: kiroModels,
+    models: defaultModels,
     oauth: {
       // Name reflects all supported auth methods: AWS Builder ID, Google, GitHub
       name: "Kiro (Builder ID / Google / GitHub)",
@@ -32,7 +32,8 @@ export default function (pi: ExtensionAPI) {
         const apiRegion = resolveApiRegion((cred as KiroCredentials).region);
         const cachedKiro = getCachedModels(apiRegion);
         const nonKiro = models.filter((m: Model<Api>) => m.provider !== "kiro");
-        const modifiedKiro = cachedKiro.map((m: Model<Api>) => ({
+        const modelsToUse = cachedKiro.length > 0 ? cachedKiro : defaultModels;
+        const modifiedKiro = modelsToUse.map((m: Model<Api>) => ({
           ...m,
           baseUrl: `https://runtime.${apiRegion}.kiro.dev/`,
         }));

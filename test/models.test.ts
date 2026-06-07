@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { filterModelsByRegion, KIRO_MODEL_IDS, kiroModels, resolveApiRegion, resolveKiroModel } from "../src/models.js";
+import {
+  buildModelDef,
+  defaultModels,
+  KIRO_MODEL_IDS,
+  resolveApiRegion,
+  resolveKiroModel,
+  ZERO_COST,
+} from "../src/models.js";
 
 describe("Feature 2: Model Definitions", () => {
   describe("resolveKiroModel", () => {
     it.each([
-      // Claude models - dash to dot conversion
       ["claude-opus-4-8", "claude-opus-4.8"],
       ["claude-opus-4-7", "claude-opus-4.7"],
       ["claude-opus-4-6", "claude-opus-4.6"],
@@ -12,7 +18,6 @@ describe("Feature 2: Model Definitions", () => {
       ["claude-sonnet-4-5", "claude-sonnet-4.5"],
       ["claude-sonnet-4", "claude-sonnet-4"],
       ["claude-haiku-4-5", "claude-haiku-4.5"],
-      // Non-Claude models
       ["deepseek-3-2", "deepseek-3.2"],
       ["minimax-m2-1", "minimax-m2.1"],
       ["glm-5", "glm-5"],
@@ -27,7 +32,7 @@ describe("Feature 2: Model Definitions", () => {
   });
 
   describe("KIRO_MODEL_IDS", () => {
-    it("contains 13 model IDs", () => {
+    it("contains 13 model IDs initially", () => {
       expect(KIRO_MODEL_IDS.size).toBe(13);
     });
   });
@@ -54,114 +59,91 @@ describe("Feature 2: Model Definitions", () => {
     });
   });
 
-  describe("filterModelsByRegion", () => {
-    it("us-east-1 returns all models", () => {
-      expect(filterModelsByRegion(kiroModels, "us-east-1")).toHaveLength(kiroModels.length);
-    });
-
-    it("eu-central-1 includes Claude + documented OSS, excludes DeepSeek and undocumented models", () => {
-      const ids = filterModelsByRegion(kiroModels, "eu-central-1").map((m) => m.id);
-      expect(ids).toContain("claude-sonnet-4-6");
-      expect(ids).toContain("minimax-m2-1");
-      expect(ids).not.toContain("deepseek-3-2");
-      expect(ids).not.toContain("agi-nova-beta-1m");
-    });
-
-    it("unknown region returns no models", () => {
-      expect(filterModelsByRegion(kiroModels, "af-south-1")).toHaveLength(0);
-    });
-  });
-
-  describe("model catalog", () => {
-    it("defines 13 models", () => {
-      expect(kiroModels).toHaveLength(13);
-    });
-
-    it("claude-haiku-4-5 has reasoning=false", () => {
-      expect(kiroModels.find((m) => m.id === "claude-haiku-4-5")?.reasoning).toBe(false);
-    });
-
-    it("flash models have reasoning=false", () => {
-      const flashModels = kiroModels.filter((m) => m.id.includes("flash"));
-      expect(flashModels.every((m) => m.reasoning === false)).toBe(true);
-    });
-
-    it("minimax has reasoning=false", () => {
-      expect(kiroModels.find((m) => m.id === "minimax-m2-1")?.reasoning).toBe(false);
-    });
-
-    it("Claude models support text and image input", () => {
-      const claudeModels = kiroModels.filter((m) => m.id.startsWith("claude-"));
-      expect(claudeModels.every((m) => m.input.includes("text") && m.input.includes("image"))).toBe(true);
-    });
-
-    it("non-Claude models (except auto) support text only", () => {
-      const textOnlyModels = kiroModels.filter((m) => !m.id.startsWith("claude-") && m.id !== "auto");
-      expect(textOnlyModels.every((m) => m.input.includes("text") && !m.input.includes("image"))).toBe(true);
-    });
-
-    it("all models have zero cost", () => {
-      expect(kiroModels.every((m) => m.cost.input === 0 && m.cost.output === 0)).toBe(true);
-    });
-
-    it("opus models have expected max tokens", () => {
-      const opusModels = kiroModels.filter((m) => m.id.includes("opus"));
-      expect(opusModels.every((m) => m.maxTokens === 32768 || m.maxTokens === 128000)).toBe(true);
-    });
-
-    it("non-Claude models (except auto) have 8K max tokens", () => {
-      const nonClaudeModels = kiroModels.filter((m) => !m.id.startsWith("claude-") && m.id !== "auto");
-      expect(nonClaudeModels.every((m) => m.maxTokens === 8192)).toBe(true);
-    });
-  });
-
-  // pi's UI exposes the `xhigh` thinking level only when a model's
-  // `thinkingLevelMap.xhigh` is explicitly defined (not undefined, not null).
-  // All other levels are opt-out. Mirror the pi-ai filter locally so this test
-  // is self-contained and version-independent from @earendil-works/pi-ai.
-  //
-  // Source: @earendil-works/pi-ai models.ts → getSupportedThinkingLevels
-  describe("thinkingLevelMap — pi UI exposes xhigh", () => {
-    const EXTENDED_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-    type Level = (typeof EXTENDED_LEVELS)[number];
-
-    function supportedLevels(model: (typeof kiroModels)[number]): Level[] {
-      if (!model.reasoning) return ["off"];
-      return EXTENDED_LEVELS.filter((level) => {
-        const mapped = (model as { thinkingLevelMap?: Partial<Record<Level, string | null>> }).thinkingLevelMap?.[
-          level
-        ];
-        if (mapped === null) return false;
-        if (level === "xhigh") return mapped !== undefined;
-        return true;
+  describe("buildModelDef", () => {
+    it("constructs standard Claude model definition", () => {
+      const m = buildModelDef("claude-sonnet-4-6", "https://example.com", true, true);
+      expect(m).toEqual({
+        id: "claude-sonnet-4-6",
+        name: "Claude Sonnet 4 6",
+        api: "kiro-api",
+        provider: "kiro",
+        baseUrl: "https://example.com",
+        reasoning: true,
+        supportsEffort: true,
+        input: ["text", "image"],
+        cost: ZERO_COST,
+        contextWindow: 1000000,
+        maxTokens: 65536,
       });
-    }
+    });
 
-    const XHIGH_MODELS = ["claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6"];
+    it("constructs Opus model definition with thinkingLevelMap and timeout when effort is supported", () => {
+      const m = buildModelDef("claude-opus-4-7", "https://example.com", true, true);
+      expect(m).toEqual({
+        id: "claude-opus-4-7",
+        name: "Claude Opus 4 7",
+        api: "kiro-api",
+        provider: "kiro",
+        baseUrl: "https://example.com",
+        reasoning: true,
+        supportsEffort: true,
+        thinkingLevelMap: { xhigh: "xhigh" },
+        input: ["text", "image"],
+        cost: ZERO_COST,
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        firstTokenTimeout: 180000,
+      });
+    });
 
-    it("Opus 4.7/4.6 models offer xhigh (and all other levels)", () => {
-      for (const m of kiroModels.filter((x) => XHIGH_MODELS.includes(x.id))) {
-        expect(supportedLevels(m), `${m.id} supported levels`).toEqual([
-          "off",
-          "minimal",
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-        ]);
+    it("does not include thinkingLevelMap for Opus model when effort is not supported", () => {
+      const m = buildModelDef("claude-opus-4-7", "https://example.com", true, false);
+      expect(m.thinkingLevelMap).toBeUndefined();
+      expect(m.firstTokenTimeout).toBe(180000);
+    });
+
+    it("constructs standard non-Claude model definition", () => {
+      const m = buildModelDef("deepseek-3-2", "https://example.com", true, false);
+      expect(m).toEqual({
+        id: "deepseek-3-2",
+        name: "Deepseek 3 2",
+        api: "kiro-api",
+        provider: "kiro",
+        baseUrl: "https://example.com",
+        reasoning: true,
+        supportsEffort: false,
+        input: ["text"],
+        cost: ZERO_COST,
+        contextWindow: 200000,
+        maxTokens: 8192,
+      });
+    });
+
+    it("constructs auto model definition", () => {
+      const m = buildModelDef("auto", "https://example.com", true, false);
+      expect(m.name).toBe("Auto");
+      expect(m.input).toEqual(["text", "image"]);
+      expect(m.contextWindow).toBe(1000000);
+      expect(m.maxTokens).toBe(65536);
+    });
+  });
+
+  describe("defaultModels bootstrap", () => {
+    it("contains 13 models", () => {
+      expect(defaultModels).toHaveLength(13);
+    });
+
+    it("has reasoning=true and supportsEffort=false for all bootstrap models", () => {
+      for (const m of defaultModels) {
+        expect(m.reasoning).toBe(true);
+        expect(m.supportsEffort).toBe(false);
       }
     });
 
-    it("other reasoning models offer up to high (no xhigh)", () => {
-      for (const m of kiroModels.filter((x) => x.reasoning && !XHIGH_MODELS.includes(x.id))) {
-        expect(supportedLevels(m), `${m.id} supported levels`).toEqual(["off", "minimal", "low", "medium", "high"]);
-      }
-    });
-
-    it("non-reasoning models still collapse to ['off']", () => {
-      for (const m of kiroModels.filter((x) => !x.reasoning)) {
-        expect(supportedLevels(m), `${m.id} supported levels`).toEqual(["off"]);
-      }
+    it("includes auto model", () => {
+      const autoModel = defaultModels.find((m) => m.id === "auto");
+      expect(autoModel).toBeDefined();
+      expect(autoModel?.name).toBe("Auto");
     });
   });
 });

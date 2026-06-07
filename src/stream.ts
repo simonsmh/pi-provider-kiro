@@ -22,7 +22,7 @@ import { debugEnabled, debugLog } from "./debug.js";
 import { parseKiroEvents } from "./event-parser.js";
 import { addPlaceholderTools, HISTORY_LIMIT, HISTORY_LIMIT_CONTEXT_WINDOW, truncateHistory } from "./history.js";
 import { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, refreshViaKiroCli } from "./kiro-cli.js";
-import { resolveKiroModel } from "./models.js";
+import { resolveKiroModel, getCachedModels } from "./models.js";
 import {
   capacityRetryConfig,
   exponentialBackoff,
@@ -40,6 +40,7 @@ import {
   convertToolsToKiro,
   extractImages,
   getContentText,
+  formatToolResultContent,
   type KiroHistoryEntry,
   type KiroImage,
   type KiroToolResult,
@@ -98,6 +99,7 @@ interface KiroRequest {
   };
   profileArn?: string;
   agentMode?: string;
+  additionalModelRequestFields?: Record<string, unknown>;
 }
 interface KiroToolCallState {
   toolUseId: string;
@@ -256,17 +258,6 @@ export function streamKiro(
         sessionId: options?.sessionId,
       });
       let systemPrompt = context.systemPrompt ?? "";
-      if (thinkingEnabled) {
-        const budget =
-          options?.reasoning === "xhigh"
-            ? 50000
-            : options?.reasoning === "high"
-              ? 30000
-              : options?.reasoning === "medium"
-                ? 20000
-                : 10000;
-        systemPrompt = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>${systemPrompt ? `\n${systemPrompt}` : ""}`;
-      }
       let retryCount = 0;
       const maxRetries = 3;
       const conversationId = options?.sessionId ?? crypto.randomUUID();
@@ -332,7 +323,7 @@ export function streamKiro(
             if (m.role === "toolResult") {
               const trm = m as ToolResultMessage;
               currentToolResults.push({
-                content: [{ text: truncate(getContentText(m), toolResultLimit) }],
+                content: formatToolResultContent(truncate(getContentText(m), toolResultLimit)),
                 status: trm.isError ? "error" : "success",
                 toolUseId: trm.toolCallId,
               });
@@ -344,14 +335,14 @@ export function streamKiro(
             const converted = convertImagesToKiro(toolResultImages);
             currentImages = currentImages ? [...currentImages, ...converted] : converted;
           }
-          currentContent = currentToolResults.length > 0 ? "Tool results provided." : "Please proceed with the task.";
+          currentContent = "";
         } else if (firstMsg?.role === "toolResult") {
           const toolResultImages2: ImageContent[] = [];
           for (const m of currentMessages)
             if (m.role === "toolResult") {
               const trm = m as ToolResultMessage;
               currentToolResults.push({
-                content: [{ text: truncate(getContentText(m), toolResultLimit) }],
+                content: formatToolResultContent(truncate(getContentText(m), toolResultLimit)),
                 status: trm.isError ? "error" : "success",
                 toolUseId: trm.toolCallId,
               });
@@ -362,7 +353,7 @@ export function streamKiro(
             const converted = convertImagesToKiro(toolResultImages2);
             currentImages = currentImages ? [...currentImages, ...converted] : converted;
           }
-          currentContent = "Tool results provided.";
+          currentContent = "";
         } else if (firstMsg?.role === "user") {
           currentContent = typeof firstMsg.content === "string" ? firstMsg.content : getContentText(firstMsg);
           if (effectiveSystemPrompt && !systemPrepended)
@@ -373,12 +364,14 @@ export function streamKiro(
           currentContent = `${TRUNCATION_NOTICE}\n\n${currentContent}`;
         }
         let uimc: { toolResults?: KiroToolResult[]; tools?: KiroToolSpec[] } | undefined;
-        if (currentToolResults.length > 0 || (context.tools && context.tools.length > 0)) {
+        let kt = context.tools && context.tools.length > 0 ? convertToolsToKiro(context.tools) : [];
+        if (history.length > 0) {
+          kt = addPlaceholderTools(kt, history);
+        }
+        if (currentToolResults.length > 0 || kt.length > 0) {
           uimc = {};
           if (currentToolResults.length > 0) uimc.toolResults = currentToolResults;
-          if (context.tools?.length) {
-            let kt = convertToolsToKiro(context.tools);
-            if (history.length > 0) kt = addPlaceholderTools(kt, history);
+          if (kt.length > 0) {
             uimc.tools = kt;
           }
         }
@@ -386,6 +379,27 @@ export function streamKiro(
           const imgs = extractImages(firstMsg);
           if (imgs.length > 0) currentImages = convertImagesToKiro(imgs as ImageContent[]);
         }
+        const baseModel = getCachedModels(region).find((m) => m.id === model.id) || (model as any);
+        const supportsEffort = baseModel?.supportsEffort;
+        let additionalModelRequestFields: Record<string, unknown> | undefined;
+        if (supportsEffort) {
+          const effortVal = typeof options?.reasoning === "string" ? options.reasoning : undefined;
+          const mappedEffort = effortVal && ["low", "medium", "high", "xhigh", "max"].includes(effortVal)
+            ? effortVal
+            : options?.reasoning === "xhigh" ? "max" : "medium";
+
+          additionalModelRequestFields = {
+            thinking: {
+              type: thinkingEnabled ? "adaptive" : "disabled",
+            },
+            ...(thinkingEnabled ? {
+              output_config: {
+                effort: mappedEffort,
+              },
+            } : {}),
+          };
+        }
+
         // kiro-cli does not enforce alternation — the API accepts
         // non-alternating history. No synthetic padding needed.
         const request: KiroRequest = {
@@ -406,6 +420,7 @@ export function streamKiro(
           },
           ...(profileArn ? { profileArn } : {}),
           agentMode: "vibe",
+          ...(additionalModelRequestFields ? { additionalModelRequestFields } : {}),
         };
         let response!: Response;
         // Reset per outer iteration — each 403 retry gets a fresh capacity budget

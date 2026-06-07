@@ -21,7 +21,7 @@ export interface KiroToolUse {
   input: Record<string, unknown>;
 }
 export interface KiroToolResult {
-  content: Array<{ text: string }>;
+  content: Array<{ text?: string; json?: unknown }>;
   status: "success" | "error";
   toolUseId: string;
 }
@@ -57,6 +57,19 @@ export function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;
   const half = Math.floor(limit / 2);
   return `${text.substring(0, half)}\n... [TRUNCATED] ...\n${text.substring(text.length - half)}`;
+}
+
+export function formatToolResultContent(text: string): Array<{ text?: string; json?: unknown }> {
+  const trimmed = text.trim();
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return [{ json: parsed }];
+    } catch {
+      // ignore JSON parse error, fallback to text
+    }
+  }
+  return [{ text }];
 }
 
 export function normalizeMessages(messages: Message[]): Message[] {
@@ -170,7 +183,7 @@ export function buildHistory(
       const trMsg = msg as ToolResultMessage;
       const toolResults: KiroToolResult[] = [
         {
-          content: [{ text: truncate(getContentText(msg), toolResultLimit) }],
+          content: formatToolResultContent(truncate(getContentText(msg), toolResultLimit)),
           status: trMsg.isError ? "error" : "success",
           toolUseId: trMsg.toolCallId,
         },
@@ -182,7 +195,7 @@ export function buildHistory(
       while (j < historyMessages.length && historyMessages[j].role === "toolResult") {
         const next = historyMessages[j] as ToolResultMessage;
         toolResults.push({
-          content: [{ text: truncate(getContentText(next), toolResultLimit) }],
+          content: formatToolResultContent(truncate(getContentText(next), toolResultLimit)),
           status: next.isError ? "error" : "success",
           toolUseId: next.toolCallId,
         });
@@ -194,8 +207,6 @@ export function buildHistory(
       const lastEntryForTr = history[history.length - 1];
       const prevTr = lastEntryForTr?.userInputMessage;
       if (prevTr) {
-        // Merge tool results into previous user message to maintain alternation without synthetic padding
-        prevTr.content += "\n\nTool results provided.";
         if (trImages.length > 0) prevTr.images = [...(prevTr.images || []), ...convertImagesToKiro(trImages)];
         if (!prevTr.userInputMessageContext) prevTr.userInputMessageContext = {};
         prevTr.userInputMessageContext.toolResults = [
@@ -205,7 +216,7 @@ export function buildHistory(
       } else {
         history.push({
           userInputMessage: {
-            content: "Tool results provided.",
+            content: "",
             modelId,
             origin: "KIRO_CLI",
             ...(trImages.length > 0 ? { images: convertImagesToKiro(trImages) } : {}),
