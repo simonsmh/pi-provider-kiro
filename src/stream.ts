@@ -23,6 +23,7 @@ import { parseKiroEvents } from "./event-parser.js";
 import { addPlaceholderTools, HISTORY_LIMIT, HISTORY_LIMIT_CONTEXT_WINDOW, truncateHistory } from "./history.js";
 import { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, refreshViaKiroCli } from "./kiro-cli.js";
 import { resolveKiroModel, getCachedModels } from "./models.js";
+import { kiroAuthHeaders } from "./oauth.js";
 import {
   capacityRetryConfig,
   exponentialBackoff,
@@ -135,26 +136,40 @@ async function resolveProfileArn(accessToken: string, endpoint: string): Promise
     const region = runtime.hostname.split(".")[1] || "us-east-1";
     const managementUrl = `https://management.${region}.kiro.dev/`;
 
+    // API keys cannot call ListAvailableProfiles ("Invalid token"), but
+    // GetProfile with an empty body returns the key's own profile. OIDC/social
+    // tokens use ListAvailableProfiles.
+    const useApiKey = accessToken.startsWith("ksk_");
+    const target = useApiKey
+      ? "AmazonCodeWhispererService.GetProfile"
+      : "AmazonCodeWhispererService.ListAvailableProfiles";
+
     const r = await fetch(managementUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-amz-json-1.0",
-        Authorization: `Bearer ${accessToken}`,
-        "X-Amz-Target": "AmazonCodeWhispererService.ListAvailableProfiles",
+        ...kiroAuthHeaders(accessToken),
+        "X-Amz-Target": target,
       },
       body: "{}",
     });
     if (!r.ok) {
       console.warn(
-        `[pi-provider-kiro] Failed to resolve profileArn: ListAvailableProfiles returned ${r.status} ${r.statusText}. Will retry on the next request.`,
+        `[pi-provider-kiro] Failed to resolve profileArn: ${target.split(".").pop()} returned ${r.status} ${r.statusText}. Will retry on the next request.`,
       );
       return undefined;
     }
-    const j = (await r.json()) as { profiles?: Array<{ arn?: string }> };
-    const arn = j.profiles?.find((p) => p.arn)?.arn;
+    let arn: string | undefined;
+    if (useApiKey) {
+      const j = (await r.json()) as { profile?: { arn?: string } };
+      arn = j.profile?.arn;
+    } else {
+      const j = (await r.json()) as { profiles?: Array<{ arn?: string }> };
+      arn = j.profiles?.find((p) => p.arn)?.arn;
+    }
     if (!arn) {
       debugLog("profileArn.empty", {
-        message: "ListAvailableProfiles returned no profile ARN; this is expected for some social-login tokens.",
+        message: "Profile lookup returned no ARN; this is expected for some social-login tokens.",
       });
       return undefined;
     }
@@ -472,7 +487,7 @@ export function streamKiro(
             headers: {
               "Content-Type": "application/x-amz-json-1.0",
               Accept: "application/json",
-              Authorization: `Bearer ${accessToken}`,
+              ...kiroAuthHeaders(accessToken),
               "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
               "x-amzn-codewhisperer-optout": "true",
               "amz-sdk-invocation-id": crypto.randomUUID(),

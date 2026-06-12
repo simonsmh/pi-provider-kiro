@@ -14,6 +14,7 @@ export type LoginChoice =
   | { method: "cached" }
   | { method: "personal" }
   | { method: "idc"; startUrl: string; region?: string }
+  | { method: "apikey"; apiKey: string }
   | null; // cancelled
 
 let _ctx: ExtensionContext | undefined;
@@ -40,12 +41,14 @@ export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
       mainItems.push({ value: "cached", label: "Use existing credentials", description: "Use cached/IDE credentials" });
     }
     mainItems.push(
+      { value: "apikey", label: "API Key", description: "Use a KIRO_API_KEY (ksk_...)" },
       { value: "personal", label: "Web Login", description: "Sign in via browser (Google, GitHub, Builder ID)" },
       { value: "idc", label: "Device Code", description: "IAM Identity Center" },
     );
 
-    let phase: "select" | "url" | "region" = "select";
+    let phase: "select" | "url" | "region" | "apikey" = "select";
     let enteredStartUrl = "";
+    let enteredApiKey = "";
 
     const container = new Container();
     const border = new DynamicBorder((s: string) => theme.fg("accent", s));
@@ -65,6 +68,8 @@ export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
     selectList.onSelect = (item) => {
       if (item.value === "idc") {
         switchToUrlInput();
+      } else if (item.value === "apikey") {
+        switchToApiKeyInput();
       } else if (item.value === "personal") {
         done({ method: "personal" });
       } else {
@@ -102,8 +107,40 @@ export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
       switchToUrlInput();
     };
 
+    // Phase 3b: API Key Input
+    const apiKeyLabel = new Text("Enter your Kiro API key (from app.kiro.dev → API Keys)", 1, 0);
+    const apiKeyInput = new Input();
+    const apiKeyHint = new Text(theme.fg("dim", "enter submit • esc back"), 1, 0);
+    const apiKeyFormatHint = new Text(theme.fg("muted", "Format: ksk_..."), 1, 0);
+
+    apiKeyInput.onSubmit = (value) => {
+      const trimmed = value.trim();
+      if (trimmed?.startsWith("ksk_")) {
+        enteredApiKey = trimmed;
+        done({ method: "apikey", apiKey: enteredApiKey });
+      }
+    };
+    apiKeyInput.onEscape = () => {
+      switchToSelect();
+    };
+
+    function switchToApiKeyInput() {
+      phase = "apikey";
+      container.clear();
+      container.addChild(border);
+      container.addChild(new Text(theme.fg("accent", theme.bold("API Key Authentication")), 1, 0));
+      container.addChild(apiKeyLabel);
+      container.addChild(apiKeyFormatHint);
+      container.addChild(apiKeyInput);
+      container.addChild(apiKeyHint);
+      container.addChild(borderBottom);
+      tui.requestRender();
+    }
+
     function switchToUrlInput() {
       phase = "url";
+      urlInput.setValue("");
+      regionInput.setValue("");
       container.clear();
       container.addChild(border);
       container.addChild(new Text(theme.fg("accent", theme.bold("IAM Identity Center")), 1, 0));
@@ -130,6 +167,7 @@ export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
       phase = "select";
       urlInput.setValue("");
       regionInput.setValue("");
+      apiKeyInput.setValue("");
       container.clear();
       container.addChild(border);
       container.addChild(title);
@@ -156,6 +194,8 @@ export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
           urlInput.handleInput(data);
         } else if (phase === "region") {
           regionInput.handleInput(data);
+        } else if (phase === "apikey") {
+          apiKeyInput.handleInput(data);
         }
         tui.requestRender();
       },

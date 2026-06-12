@@ -160,6 +160,8 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         "Content-Type": "application/x-amz-json-1.0",
         "X-Amz-Target": "AmazonCodeWhispererService.ListAvailableModels",
         Authorization: `Bearer ${accessToken}`,
+        // API keys (ksk_...) require this header or the control plane rejects them.
+        ...(accessToken.startsWith("ksk_") ? { tokentype: "API_KEY" } : {}),
       },
       body: JSON.stringify({
         origin: "KIRO_CLI",

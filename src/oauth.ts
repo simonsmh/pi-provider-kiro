@@ -22,8 +22,8 @@ export const SSO_SCOPES = [
   "codewhisperer:taskassist",
 ];
 
-export type KiroAuthMethod = "idc" | "desktop";
-export type KiroLoginMethod = "auto" | "builder-id" | "google" | "github";
+export type KiroAuthMethod = "idc" | "desktop" | "apikey";
+export type KiroLoginMethod = "auto" | "builder-id" | "google" | "github" | "apikey";
 
 export interface KiroCredentials extends OAuthCredentials {
   clientId: string;
@@ -33,6 +33,26 @@ export interface KiroCredentials extends OAuthCredentials {
   /** Required for Google/GitHub social profiles; ListAvailableProfiles may return empty for these tokens. */
   profileArn?: string;
   startUrl?: string;
+}
+
+/** Kiro API keys are bearer tokens prefixed with `ksk_`. */
+export function isApiKey(token: string | undefined): boolean {
+  return !!token && token.startsWith("ksk_");
+}
+
+/**
+ * Build the Authorization-related headers for a Kiro API request.
+ * API keys (ksk_...) require the extra `tokentype: API_KEY` header; the
+ * Kiro control plane rejects them with "Invalid token" otherwise.
+ */
+export function kiroAuthHeaders(accessToken: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+  };
+  if (isApiKey(accessToken)) {
+    headers.tokentype = "API_KEY";
+  }
+  return headers;
 }
 
 /**
@@ -57,6 +77,88 @@ export async function loginKiro(
     }
   }
   return creds;
+}
+
+/**
+ * Login to Kiro using a KIRO_API_KEY (ksk_... format).
+ *
+ * API keys are bearer tokens used directly against the Kiro API — no OIDC
+ * exchange, no kiro-cli dependency. The only requirements are:
+ *   1. Send `Authorization: Bearer ksk_...` plus `tokentype: API_KEY`.
+ *   2. Discover the profileArn via GetProfile (empty body returns the
+ *      caller's own profile when authenticated with an API key).
+ */
+export async function loginKiroWithApiKey(
+  callbacks: OAuthLoginCallbacks,
+  apiKey: string,
+): Promise<OAuthCredentials> {
+  if (!apiKey.startsWith("ksk_")) {
+    throw new Error("Invalid API key format. Kiro API keys start with 'ksk_'.");
+  }
+
+  (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
+    "Validating API key...",
+  );
+
+  const { resolveApiRegion } = await import("./models.js");
+  // API keys are issued for the us-east-1 control plane.
+  const region = "us-east-1";
+  const apiRegion = resolveApiRegion(region);
+  const managementUrl = `https://management.${apiRegion}.kiro.dev/`;
+
+  // GetProfile with an empty body returns the API key's own profile.
+  let profileArn: string | undefined;
+  const resp = await fetch(managementUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.0",
+      "X-Amz-Target": "AmazonCodeWhispererService.GetProfile",
+      ...kiroAuthHeaders(apiKey),
+    },
+    body: "{}",
+  });
+
+  if (!resp.ok) {
+    let detail = "";
+    try {
+      detail = await resp.text();
+    } catch {
+      detail = "";
+    }
+    if (resp.status === 401 || resp.status === 403 || /Invalid token/i.test(detail)) {
+      throw new Error("API key was rejected by Kiro. Check that the key is valid and not expired.");
+    }
+    throw new Error(`Kiro GetProfile failed: ${resp.status} ${resp.statusText} ${detail}`.trim());
+  }
+
+  const data = (await resp.json()) as { profile?: { arn?: string } };
+  profileArn = data.profile?.arn;
+
+  const kiroCreds: KiroCredentials = {
+    access: apiKey,
+    // The API key acts as both access and refresh material; mark it for the
+    // refresh path so we never attempt an OIDC refresh on it.
+    refresh: `${apiKey}|apikey`,
+    // API keys do not expire on a fixed schedule we can read; treat them as
+    // long-lived and let the API surface a 401 if revoked.
+    expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+    clientId: "",
+    clientSecret: "",
+    region,
+    authMethod: "apikey",
+    profileArn,
+  };
+
+  if (!process.env.VITEST) {
+    try {
+      const { updateKiroModelsCache } = await import("./models.js");
+      await updateKiroModelsCache(kiroCreds.access, apiRegion, kiroCreds.profileArn);
+    } catch {
+      // Ignore cache errors
+    }
+  }
+
+  return kiroCreds;
 }
 
 async function loginKiroInternal(
@@ -234,6 +336,12 @@ async function refreshKiroTokenInternal(credentials: OAuthCredentials): Promise<
   const { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, saveKiroCliCredentials, getKiroCliSocialToken } =
     await import("./kiro-cli.js");
 
+  // API key credentials are long-lived bearer tokens — there is nothing to
+  // refresh. Return them unchanged so the same key keeps being used.
+  if ((credentials as KiroCredentials).authMethod === "apikey" || isApiKey(credentials.access)) {
+    return credentials;
+  }
+
   // Layer 0: Kiro IDE token — freshest source, covers IAM Identity Center
   const ideCreds = getKiroIdeCredentials();
   if (ideCreds) return ideCreds;
@@ -293,6 +401,11 @@ async function refreshKiroTokenDirect(credentials: OAuthCredentials): Promise<OA
   const refreshToken = parts[0] ?? "";
   const authMethod = (parts[parts.length - 1] ?? "idc") as KiroAuthMethod;
   const region = (credentials as KiroCredentials).region || "us-east-1";
+
+  if (authMethod === "apikey") {
+    // API keys are long-lived bearer tokens — no refresh needed.
+    return credentials;
+  }
 
   if (authMethod === "desktop") {
     // Kiro desktop app tokens use a different refresh endpoint

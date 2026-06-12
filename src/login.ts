@@ -17,7 +17,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { showLoginUI, showWaitingUI, hasExtensionContext } from "./login-ui.js";
-import { BUILDER_ID_START_URL, type KiroAuthMethod, type KiroCredentials, SSO_SCOPES } from "./oauth.js";
+import { BUILDER_ID_START_URL, type KiroAuthMethod, type KiroCredentials, SSO_SCOPES, loginKiroWithApiKey } from "./oauth.js";
 import { debugLog } from "./debug.js";
 
 type PromptFn = (p: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
@@ -88,6 +88,8 @@ export async function interactiveLogin(
               return runDeviceCodeFlow(mergedCallbacks, choice.startUrl, choice.region);
             }
             return runDeviceCodeFlowWithRegionDetection(mergedCallbacks, choice.startUrl);
+          case "apikey":
+            return loginKiroWithApiKey(mergedCallbacks, choice.apiKey);
           default:
             throw new Error("Unknown login method");
         }

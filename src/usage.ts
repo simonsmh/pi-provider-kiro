@@ -3,6 +3,7 @@
 
 import type { OAuthCredentials } from "@earendil-works/pi-ai";
 import type { KiroCredentials } from "./oauth.js";
+import { kiroAuthHeaders } from "./oauth.js";
 
 const USAGE_ENDPOINT = "https://management.{region}.kiro.dev/";
 const MANAGE_USAGE_URL = "https://app.kiro.dev/account/usage";
@@ -187,7 +188,7 @@ async function postOperation<TResponse>(
     method: "POST",
     headers: {
       ...JSON_HEADERS,
-      Authorization: `Bearer ${credentials.access}`,
+      ...kiroAuthHeaders(credentials.access),
       "X-Amz-Target": target,
     },
     body: JSON.stringify(body),
