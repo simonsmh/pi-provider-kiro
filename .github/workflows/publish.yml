@@ -5,6 +5,12 @@ name: Publish
 on:
   release:
     types: [published]
+  # Manual fallback (e.g. if the release event did not trigger, or to re-run).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v0.8.1)"
+        required: true
 
 jobs:
   publish:
@@ -15,6 +21,10 @@ jobs:
       id-token: write # npm provenance + Trusted Publisher OIDC
     steps:
       - uses: actions/checkout@v6
+        with:
+          # On manual dispatch, check out the requested tag; on release, the
+          # default ref is already the tag.
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v6
         with:
@@ -27,7 +37,8 @@ jobs:
       # Guard: the release tag (vX.Y.Z) must match package.json "version".
       - name: Verify tag matches package.json version
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${REF#v}"
           PKG="$(node -p "require('./package.json').version")"
           echo "tag=$TAG package.json=$PKG"
           if [ "$TAG" != "$PKG" ]; then
