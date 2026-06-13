@@ -32,7 +32,7 @@ vi.mock("../src/models.js", async (importOriginal) => {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 1000000,
         maxTokens: 128000,
-      }
+      },
     ]),
   };
 });
@@ -204,6 +204,45 @@ describe("Feature 9: Streaming Integration", () => {
     const body2 = JSON.parse(mockFetch2.mock.calls[0][1].body);
     expect(body2.profileArn).toBe(testArn);
 
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the hardcoded Builder ID profile ARN without calling the profile APIs", async () => {
+    // Builder ID tokens can't call ListAvailableProfiles/GetProfile, so the
+    // stream must fall back to the shared ARN that kiro-cli hardcodes, taken
+    // from the active Builder ID kiro-cli credential (start_url: null).
+    // Mark the profileArn cache resolved so resolveProfileArn makes no fetch —
+    // the ARN must come purely from the Builder ID fallback.
+    resetProfileArnCache(true);
+    const builderIdArn = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+
+    const kiroCliModule = await import("../src/kiro-cli.js");
+    const spy = vi.spyOn(kiroCliModule, "getKiroCliCredentials").mockReturnValue({
+      refresh: "rt|client|secret|idc",
+      access: "builder-id-token",
+      expires: Date.now() + 3_600_000,
+      clientId: "client",
+      clientSecret: "secret",
+      region: "us-east-1",
+      authMethod: "idc",
+      // No startUrl → Builder ID. kiro-cli's reader supplies the ARN, but we
+      // also assert the stream's own fallback by leaving profileArn unset here.
+    });
+
+    // Only one fetch should happen — the inference call. No ListAvailableProfiles.
+    const mockFetch = mockFetchOk('{"content":"Hi"}{"contextUsagePercentage":5}');
+    vi.stubGlobal("fetch", mockFetch);
+
+    const stream = streamKiro(makeModel(), makeContext(), { apiKey: "builder-id-token" });
+    await collect(stream);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const target = mockFetch.mock.calls[0][1].headers["X-Amz-Target"];
+    expect(target).toContain("GenerateAssistantResponse");
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.profileArn).toBe(builderIdArn);
+
+    spy.mockRestore();
     vi.unstubAllGlobals();
   });
 

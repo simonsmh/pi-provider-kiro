@@ -16,9 +16,16 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
-import { showLoginUI, showWaitingUI, hasExtensionContext } from "./login-ui.js";
-import { BUILDER_ID_START_URL, type KiroAuthMethod, type KiroCredentials, SSO_SCOPES, loginKiroWithApiKey } from "./oauth.js";
 import { debugLog } from "./debug.js";
+import { hasExtensionContext, showLoginUI, showWaitingUI } from "./login-ui.js";
+import {
+  BUILDER_ID_PROFILE_ARN,
+  BUILDER_ID_START_URL,
+  type KiroAuthMethod,
+  type KiroCredentials,
+  loginKiroWithApiKey,
+  SSO_SCOPES,
+} from "./oauth.js";
 
 type PromptFn = (p: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
 
@@ -306,6 +313,9 @@ async function pollDeviceCode(
             region,
             authMethod: "idc" as KiroAuthMethod,
             startUrl,
+            // Builder ID tokens can't discover a profile ARN via the profile
+            // APIs; the official kiro-cli sends a shared hardcoded ARN instead.
+            ...(startUrl === BUILDER_ID_START_URL ? { profileArn: BUILDER_ID_PROFILE_ARN } : {}),
           } satisfies KiroCredentials;
         }
         break;
@@ -323,10 +333,7 @@ async function pollDeviceCode(
 
 function generatePkce() {
   const codeVerifier = crypto.randomBytes(32).toString("base64url");
-  const codeChallenge = crypto
-    .createHash("sha256")
-    .update(codeVerifier)
-    .digest("base64url");
+  const codeChallenge = crypto.createHash("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 
@@ -518,7 +525,9 @@ export async function runSocialLoginFlow(
       getProgress(callbacks)?.(`Please complete login in your browser...`);
       (callbacks as unknown as { onAuth: (info: { url: string; instructions: string }) => void }).onAuth({
         url: authUrl,
-        instructions: provider ? `Click to sign in via ${provider === "google" ? "Google" : "GitHub"}.` : "Click to sign in with your preferred account.",
+        instructions: provider
+          ? `Click to sign in via ${provider === "google" ? "Google" : "GitHub"}.`
+          : "Click to sign in with your preferred account.",
       });
     });
   });

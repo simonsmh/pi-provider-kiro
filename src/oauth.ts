@@ -13,6 +13,15 @@ import { interactiveLogin } from "./login.js";
 
 export const SSO_OIDC_ENDPOINT = "https://oidc.us-east-1.amazonaws.com";
 export const BUILDER_ID_START_URL = "https://view.awsapps.com/start";
+/**
+ * Shared profile ARN that the official kiro-cli hardcodes for AWS Builder ID
+ * (free-tier) tokens. Builder ID tokens are not authorized to call the
+ * profile-management APIs (ListAvailableProfiles / ListProfiles / GetProfile
+ * all reject them), so no per-user ARN can be discovered. kiro-cli instead
+ * sends this constant ARN verbatim in ListAvailableModels and
+ * GenerateAssistantResponse requests. Captured from kiro-cli 2.7.0 traffic.
+ */
+export const BUILDER_ID_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 export const KIRO_DESKTOP_REFRESH_URL = "https://prod.{region}.auth.desktop.kiro.dev/refreshToken";
 export const SSO_SCOPES = [
   "codewhisperer:completions",
@@ -38,6 +47,22 @@ export interface KiroCredentials extends OAuthCredentials {
 /** Kiro API keys are bearer tokens prefixed with `ksk_`. */
 export function isApiKey(token: string | undefined): boolean {
   return !!token && token.startsWith("ksk_");
+}
+
+/**
+ * Whether a credential is an AWS Builder ID (free-tier) token.
+ *
+ * Builder ID tokens are device-code OIDC tokens with no IAM Identity Center
+ * start URL — kiro-cli stores `start_url: null` for them, and our own login
+ * flow tags them with the well-known Builder ID start URL. A real IAM
+ * Identity Center org token always carries a custom company start URL, so the
+ * absence of a start URL (or an exact match on the Builder ID URL) identifies
+ * Builder ID. Social (Google/GitHub) logins use `authMethod: "desktop"` and
+ * are excluded here.
+ */
+export function isBuilderIdCredential(creds: Pick<KiroCredentials, "authMethod" | "startUrl"> | undefined): boolean {
+  if (!creds || creds.authMethod !== "idc") return false;
+  return !creds.startUrl || creds.startUrl === BUILDER_ID_START_URL;
 }
 
 /**
@@ -71,7 +96,9 @@ export async function loginKiro(
     try {
       const { resolveApiRegion, updateKiroModelsCache } = await import("./models.js");
       const region = resolveApiRegion((creds as KiroCredentials).region);
-      await updateKiroModelsCache(creds.access, region, (creds as KiroCredentials).profileArn);
+      const kc = creds as KiroCredentials;
+      const profileArn = kc.profileArn || (isBuilderIdCredential(kc) ? BUILDER_ID_PROFILE_ARN : undefined);
+      await updateKiroModelsCache(creds.access, region, profileArn);
     } catch {
       // Ignore cache errors
     }
@@ -88,17 +115,12 @@ export async function loginKiro(
  *   2. Discover the profileArn via GetProfile (empty body returns the
  *      caller's own profile when authenticated with an API key).
  */
-export async function loginKiroWithApiKey(
-  callbacks: OAuthLoginCallbacks,
-  apiKey: string,
-): Promise<OAuthCredentials> {
+export async function loginKiroWithApiKey(callbacks: OAuthLoginCallbacks, apiKey: string): Promise<OAuthCredentials> {
   if (!apiKey.startsWith("ksk_")) {
     throw new Error("Invalid API key format. Kiro API keys start with 'ksk_'.");
   }
 
-  (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
-    "Validating API key...",
-  );
+  (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.("Validating API key...");
 
   const { resolveApiRegion } = await import("./models.js");
   // API keys are issued for the us-east-1 control plane.

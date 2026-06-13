@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { KiroCredentials } from "../src/oauth.js";
-import { refreshKiroToken } from "../src/oauth.js";
 import { getKiroCliCredentialsAllowExpired } from "../src/kiro-cli.js";
+import type { KiroCredentials } from "../src/oauth.js";
+import { BUILDER_ID_PROFILE_ARN, BUILDER_ID_START_URL, isBuilderIdCredential, refreshKiroToken } from "../src/oauth.js";
 
 // Mock kiro-cli to prevent fallback to real credentials
 vi.mock("../src/kiro-cli.js", () => ({
@@ -20,6 +20,46 @@ vi.mock("../src/kiro-ide.js", () => ({
 
 describe("Feature 3: OAuth — Token Refresh", () => {
   // Interactive login / device code flow tests live in test/login.test.ts (Feature 10)
+
+  describe("isBuilderIdCredential", () => {
+    const base = {
+      refresh: "rt|c|s|idc",
+      access: "at",
+      expires: Date.now() + 3_600_000,
+      clientId: "c",
+      clientSecret: "s",
+      region: "us-east-1",
+    } as const;
+
+    it("is true for an idc token with no start URL (kiro-cli stores start_url: null)", () => {
+      expect(isBuilderIdCredential({ ...base, authMethod: "idc" } as KiroCredentials)).toBe(true);
+    });
+
+    it("is true for an idc token tagged with the Builder ID start URL", () => {
+      expect(
+        isBuilderIdCredential({ ...base, authMethod: "idc", startUrl: BUILDER_ID_START_URL } as KiroCredentials),
+      ).toBe(true);
+    });
+
+    it("is false for an IAM Identity Center org token (custom start URL)", () => {
+      expect(
+        isBuilderIdCredential({
+          ...base,
+          authMethod: "idc",
+          startUrl: "https://mycompany.awsapps.com/start",
+        } as KiroCredentials),
+      ).toBe(false);
+    });
+
+    it("is false for social (desktop) and undefined credentials", () => {
+      expect(isBuilderIdCredential({ ...base, authMethod: "desktop" } as KiroCredentials)).toBe(false);
+      expect(isBuilderIdCredential(undefined)).toBe(false);
+    });
+
+    it("exposes the shared Builder ID profile ARN constant captured from kiro-cli", () => {
+      expect(BUILDER_ID_PROFILE_ARN).toBe("arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX");
+    });
+  });
 
   describe("refreshKiroToken", () => {
     it("refreshes token using encoded refresh field", async () => {

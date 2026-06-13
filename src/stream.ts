@@ -22,8 +22,8 @@ import { debugEnabled, debugLog } from "./debug.js";
 import { parseKiroEvents } from "./event-parser.js";
 import { addPlaceholderTools, HISTORY_LIMIT, HISTORY_LIMIT_CONTEXT_WINDOW, truncateHistory } from "./history.js";
 import { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, refreshViaKiroCli } from "./kiro-cli.js";
-import { resolveKiroModel, getCachedModels } from "./models.js";
-import { kiroAuthHeaders } from "./oauth.js";
+import { getCachedModels, resolveKiroModel } from "./models.js";
+import { BUILDER_ID_PROFILE_ARN, isApiKey, isBuilderIdCredential, kiroAuthHeaders } from "./oauth.js";
 import {
   capacityRetryConfig,
   exponentialBackoff,
@@ -40,8 +40,8 @@ import {
   convertImagesToKiro,
   convertToolsToKiro,
   extractImages,
-  getContentText,
   formatToolResultContent,
+  getContentText,
   type KiroHistoryEntry,
   type KiroImage,
   type KiroToolResult,
@@ -255,6 +255,12 @@ export function streamKiro(
       const cliCreds = getKiroCliCredentials() ?? getKiroCliCredentialsAllowExpired();
       const cliProfileArn = cliCreds?.access === accessToken ? cliCreds.profileArn : undefined;
       let profileArn = optionProfileArn || cliProfileArn || (await resolveProfileArn(accessToken, endpoint));
+      // Final fallback for AWS Builder ID tokens: the profile APIs reject them,
+      // so resolveProfileArn returns nothing. Use the shared ARN the official
+      // kiro-cli hardcodes, matching the active credential when it's Builder ID.
+      if (!profileArn && !isApiKey(accessToken) && isBuilderIdCredential(cliCreds)) {
+        profileArn = BUILDER_ID_PROFILE_ARN;
+      }
 
       // Trigger dynamic models cache update in the background if empty or stale
       const ep = new URL(endpoint);
@@ -265,7 +271,10 @@ export function streamKiro(
       }
 
       const kiroModelId = resolveKiroModel(model.id);
-      const thinkingEnabled = (options?.reasoning as any) !== false && (options?.reasoning as any) !== "off" && (!!options?.reasoning || model.reasoning);
+      const thinkingEnabled =
+        (options?.reasoning as any) !== false &&
+        (options?.reasoning as any) !== "off" &&
+        (!!options?.reasoning || model.reasoning);
       debugLog("request.init", {
         endpoint,
         model: model.id,
@@ -279,7 +288,7 @@ export function streamKiro(
         profileArn,
         sessionId: options?.sessionId,
       });
-      let systemPrompt = context.systemPrompt ?? "";
+      const systemPrompt = context.systemPrompt ?? "";
       let retryCount = 0;
       const maxRetries = 3;
       let skipAdditionalFields = false;
@@ -538,6 +547,9 @@ export function streamKiro(
                 (options as unknown as { profileArn?: string })?.profileArn ||
                 freshCreds?.profileArn;
               profileArn = refreshedProfileArn || (await resolveProfileArn(accessToken, endpoint));
+              if (!profileArn && !isApiKey(accessToken) && isBuilderIdCredential(freshCreds)) {
+                profileArn = BUILDER_ID_PROFILE_ARN;
+              }
               const delayMs = exponentialBackoff(retryCount - 1, 500, MAX_RETRY_DELAY);
               await abortableDelay(delayMs, options?.signal);
               break; // break inner loop, continue outer loop
@@ -550,7 +562,11 @@ export function streamKiro(
               throw new Error(`Kiro API error: ${errText || response.statusText}`);
             }
             // Model doesn't support additionalModelRequestFields — retry without it
-            if (response.status === 400 && errText.includes("additionalModelRequestFields is not supported") && !skipAdditionalFields) {
+            if (
+              response.status === 400 &&
+              errText.includes("additionalModelRequestFields is not supported") &&
+              !skipAdditionalFields
+            ) {
               skipAdditionalFields = true;
               break; // break inner loop, continue outer loop to rebuild request
             }

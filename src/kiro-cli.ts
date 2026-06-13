@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { KiroAuthMethod, KiroCredentials } from "./oauth.js";
+import { BUILDER_ID_PROFILE_ARN, BUILDER_ID_START_URL } from "./oauth.js";
 
 const require = createRequire(import.meta.url);
 
@@ -159,6 +160,13 @@ function tryKiroCliToken(
   // IDC — need device registration credentials for refresh
   let clientId = "";
   let clientSecret = "";
+  // A Builder ID (free-tier) token has no IAM Identity Center start URL —
+  // kiro-cli stores `start_url: null`. Such tokens can't discover a profile
+  // ARN via the profile APIs, so apply the shared hardcoded ARN that kiro-cli
+  // itself uses (only when kiro-cli didn't persist one). A real org start URL
+  // means IAM Identity Center, where the profile is discoverable normally.
+  const tokenStartUrl = tokenData.start_url || tokenData.startUrl;
+  const builderIdArn = tokenStartUrl && tokenStartUrl !== BUILDER_ID_START_URL ? undefined : BUILDER_ID_PROFILE_ARN;
   // Match the device-registration key to the same prefix as the token key
   const keyPrefix = tokenKey.split(":")[0]; // "kirocli" or "codewhisperer"
   const deviceResult = queryKiroCliDb(
@@ -180,7 +188,7 @@ function tryKiroCliToken(
     clientSecret,
     region,
     authMethod: "idc",
-    profileArn: tokenData.profile_arn || tokenData.profileArn,
+    profileArn: tokenData.profile_arn || tokenData.profileArn || builderIdArn,
     startUrl: tokenData.start_url || tokenData.startUrl,
   };
 }
