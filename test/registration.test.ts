@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultModels, getCachedModels } from "../src/models.js";
 
 // Mock models.js's getCachedModels helper to control cache contents
@@ -45,13 +45,13 @@ describe("Feature 1: Extension Registration", () => {
     expect(Array.isArray(config.models)).toBe(true);
   });
 
-  it("registers OAuth with name 'Kiro (Builder ID / Google / GitHub)'", async () => {
+  it("registers OAuth with name 'Kiro (Web Login)'", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
     mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    expect(config.oauth.name).toBe("Kiro (Builder ID / Google / GitHub)");
+    expect(config.oauth.name).toBe("Kiro (Web Login)");
     expect(typeof config.oauth.login).toBe("function");
     expect(typeof config.oauth.refreshToken).toBe("function");
     expect(typeof config.oauth.getApiKey).toBe("function");
@@ -85,7 +85,19 @@ describe("Feature 1: Extension Registration", () => {
     ssoRegion,
     expectedApiRegion,
   }) => {
-    const fakeModel = { id: "claude-sonnet-4-6", name: "Test", api: "kiro-api" as const, provider: "kiro" as const, baseUrl: "old", reasoning: true, supportsEffort: false, input: ["text" as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 8192 };
+    const fakeModel = {
+      id: "claude-sonnet-4-6",
+      name: "Test",
+      api: "kiro-api" as const,
+      provider: "kiro" as const,
+      baseUrl: "old",
+      reasoning: true,
+      supportsEffort: false,
+      input: ["text" as const],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 100000,
+      maxTokens: 8192,
+    };
     vi.mocked(getCachedModels).mockReturnValue([fakeModel]);
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
@@ -108,14 +120,26 @@ describe("Feature 1: Extension Registration", () => {
     const models = defaultModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: "eu-west-1" };
     const modified = config.oauth.modifyModels(models, creds);
-    
+
     // Fallback uses defaultModels (from cache, may be empty or populated)
     expect(Array.isArray(modified)).toBe(true);
   });
 
   it("modifyModels uses cached models when cache is populated", async () => {
     const cachedModelsMock = [
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4 6", api: "kiro-api" as const, provider: "kiro" as const, baseUrl: "cached", reasoning: true, supportsEffort: true, input: ["text" as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 8192 }
+      {
+        id: "claude-sonnet-4-6",
+        name: "Claude Sonnet 4 6",
+        api: "kiro-api" as const,
+        provider: "kiro" as const,
+        baseUrl: "cached",
+        reasoning: true,
+        supportsEffort: true,
+        input: ["text" as const],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 100000,
+        maxTokens: 8192,
+      },
     ];
     vi.mocked(getCachedModels).mockReturnValue(cachedModelsMock);
     const mod = await import("../src/index.js");

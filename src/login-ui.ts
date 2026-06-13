@@ -6,9 +6,9 @@
 // Phase 1: SelectList — pick login method (Builder ID / IdC / Google / GitHub)
 // Phase 2: Input — enter IAM Identity Center start URL (only for option 2)
 
+import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { DynamicBorder, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, Input, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
-import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 
 export type LoginChoice =
   | { method: "cached" }
@@ -209,8 +209,8 @@ export async function showLoginUI(hasCached?: boolean): Promise<LoginChoice> {
  */
 export async function showWaitingUI(
   outerCallbacks: OAuthLoginCallbacks,
-  choice: Exclude<LoginChoice, null>,
-  runAuth: (mergedCallbacks: OAuthLoginCallbacks) => Promise<OAuthCredentials>
+  _choice: Exclude<LoginChoice, null>,
+  runAuth: (mergedCallbacks: OAuthLoginCallbacks) => Promise<OAuthCredentials>,
 ): Promise<OAuthCredentials | null> {
   if (!_ctx) {
     return runAuth(outerCallbacks);
@@ -270,7 +270,7 @@ export async function showWaitingUI(
           tui.requestRender();
           setTimeout(() => done(null), 3000);
         }
-      }
+      },
     );
 
     return {

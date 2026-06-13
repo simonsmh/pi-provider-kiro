@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCachedModels, isCacheStale, updateKiroModelsCache } from "../src/models.js";
 
 vi.mock("node:fs", () => ({
@@ -97,16 +97,17 @@ describe("Kiro Models Cache Scoping", () => {
     it("saves models using getCacheKey", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({
-          models: [
-            {
-              modelId: "claude-sonnet-4.6",
-              additionalModelRequestFieldsSchema: {
-                properties: { thinking: {} }
-              }
-            }
-          ]
-        })
+        json: () =>
+          Promise.resolve({
+            models: [
+              {
+                modelId: "claude-sonnet-4.6",
+                additionalModelRequestFieldsSchema: {
+                  properties: { thinking: {} },
+                },
+              },
+            ],
+          }),
       });
       vi.stubGlobal("fetch", mockFetch);
       vi.mocked(existsSync).mockReturnValue(false);

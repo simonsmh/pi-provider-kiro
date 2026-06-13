@@ -6,7 +6,7 @@ import type { Api, Model, OAuthCredentials } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getKiroCliCredentials } from "./kiro-cli.js";
 import { setExtensionContext } from "./login-ui.js";
-import { getCachedModels, defaultModels, resolveApiRegion } from "./models.js";
+import { defaultModels, getCachedModels, resolveApiRegion } from "./models.js";
 import type { KiroCredentials } from "./oauth.js";
 import { loginKiro, refreshKiroToken } from "./oauth.js";
 import { streamKiro } from "./stream.js";
@@ -22,8 +22,8 @@ export default function (pi: ExtensionAPI) {
     api: "kiro-api",
     models: defaultModels,
     oauth: {
-      // Name reflects all supported auth methods: AWS Builder ID, Google, GitHub
-      name: "Kiro (Builder ID / Google / GitHub)",
+      // Web Login covers all browser-based auth methods: AWS Builder ID, Google, GitHub
+      name: "Kiro (Web Login)",
       login: loginKiro,
       refreshToken: refreshKiroToken,
       getApiKey: (cred: OAuthCredentials) => cred.access,

@@ -12,8 +12,8 @@ vi.mock("../src/kiro-cli.js", () => ({
   saveKiroCliCredentials: vi.fn(),
 }));
 
-let mockHttpServer: any = {
-  listen: vi.fn((port, cb) => {
+const mockHttpServer: any = {
+  listen: vi.fn((_port, cb) => {
     if (cb) cb();
     if (mockHttpServer.handler) {
       const mockReq = { url: "/?code=mock_code&state=mock_state", headers: { host: "localhost:3128" } };
@@ -39,7 +39,7 @@ vi.mock("node:http", () => ({
 
 vi.mock("node:crypto", () => ({
   default: {
-    randomBytes: vi.fn((n) => ({
+    randomBytes: vi.fn((_n) => ({
       toString: vi.fn(() => "mock_state"),
     })),
     createHash: vi.fn(() => ({
@@ -53,7 +53,7 @@ vi.mock("node:crypto", () => ({
 // Mock login-ui — no ctx available in tests, return null to exercise fallback
 vi.mock("../src/login-ui.js", () => ({
   showLoginUI: vi.fn(() => Promise.resolve(null)),
-  showWaitingUI: vi.fn((callbacks, choice, runAuth) => runAuth(callbacks)),
+  showWaitingUI: vi.fn((callbacks, _choice, runAuth) => runAuth(callbacks)),
   hasExtensionContext: vi.fn(() => false),
   setExtensionContext: vi.fn(),
 }));
@@ -163,7 +163,11 @@ describe("Feature 10: Interactive Login", () => {
 
     it("TUI: idc with explicit region → IdC flow directly using specified region", async () => {
       const { showLoginUI } = await import("../src/login-ui.js");
-      vi.mocked(showLoginUI).mockResolvedValueOnce({ method: "idc", startUrl: "https://mycompany.awsapps.com/start", region: "us-east-2" });
+      vi.mocked(showLoginUI).mockResolvedValueOnce({
+        method: "idc",
+        startUrl: "https://mycompany.awsapps.com/start",
+        region: "us-east-2",
+      });
       const mockFetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ clientId: "c", clientSecret: "s" }) })
@@ -224,12 +228,12 @@ describe("Feature 10: Interactive Login", () => {
       vi.stubGlobal("fetch", mockFetch);
 
       const originalListen = mockHttpServer.listen;
-      mockHttpServer.listen = vi.fn((port, cb) => {
+      mockHttpServer.listen = vi.fn((_port, cb) => {
         if (cb) cb();
         if (mockHttpServer.handler) {
-          const mockReq = { 
-            url: "/signin/callback?login_option=awsidc&issuer_url=https%3A%2F%2Fd-9567aedac7.awsapps.com%2Fstart%2F&idc_region=ap-northeast-1&state=mock_state", 
-            headers: { host: "localhost:3128" } 
+          const mockReq = {
+            url: "/signin/callback?login_option=awsidc&issuer_url=https%3A%2F%2Fd-9567aedac7.awsapps.com%2Fstart%2F&idc_region=ap-northeast-1&state=mock_state",
+            headers: { host: "localhost:3128" },
           };
           const mockRes = {
             writeHead: vi.fn(),

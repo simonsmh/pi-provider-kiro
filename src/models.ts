@@ -1,8 +1,8 @@
 // Feature 2: Model Definitions
 
-import { existsSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 const CACHE_PATH = join(homedir(), ".pi", "agent", "kiro-models-cache.json");
 
@@ -32,9 +32,13 @@ export function buildModelDef(
 ): KiroModelDef {
   const isClaude = piId.startsWith("claude");
   const isOpus = piId.includes("opus");
-  const name = piId === "auto"
-    ? "Auto"
-    : piId.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const name =
+    piId === "auto"
+      ? "Auto"
+      : piId
+          .split("-")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
 
   return {
     id: piId,
@@ -47,7 +51,7 @@ export function buildModelDef(
     ...(isOpus && hasEffortSchema
       ? { thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" } }
       : {}),
-    input: (isClaude || piId === "auto") ? ["text", "image"] : ["text"],
+    input: isClaude || piId === "auto" ? ["text", "image"] : ["text"],
     cost: ZERO_COST,
     contextWindow: isClaude || piId === "auto" ? 1000000 : 200000,
     maxTokens: isOpus ? 128000 : isClaude || piId === "auto" ? 65536 : 8192,
@@ -55,7 +59,7 @@ export function buildModelDef(
   };
 }
 
-const DEFAULT_BASE_URL = "https://runtime.us-east-1.kiro.dev/";
+const _DEFAULT_BASE_URL = "https://runtime.us-east-1.kiro.dev/";
 
 // Load models from disk cache at startup; empty until first successful auth.
 function loadDefaultModels(): KiroModelDef[] {
@@ -67,15 +71,15 @@ function loadDefaultModels(): KiroModelDef[] {
       const models = Array.isArray(entry) ? entry : entry?.models;
       if (Array.isArray(models) && models.length > 0) return models;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return [];
 }
 export const defaultModels: KiroModelDef[] = loadDefaultModels();
 
 // Valid Kiro model IDs — populated from cache
-export const KIRO_MODEL_IDS = new Set<string>(
-  defaultModels.map((m) => m.id.replace(/(\d)-(\d)/g, "$1.$2"))
-);
+export const KIRO_MODEL_IDS = new Set<string>(defaultModels.map((m) => m.id.replace(/(\d)-(\d)/g, "$1.$2")));
 
 let cachedIdsLoaded = false;
 export function loadCachedModelIds(): void {
@@ -111,7 +115,7 @@ export function getCachedModels(region: string, profileArn?: string): KiroModelD
     try {
       const raw = readFileSync(CACHE_PATH, "utf-8");
       const data = JSON.parse(raw) as Record<string, any>;
-      if (data && data[key]) {
+      if (data?.[key]) {
         const entry = data[key];
         if (Array.isArray(entry)) {
           return entry;
@@ -281,4 +285,3 @@ export function resolveApiRegion(ssoRegion: string | undefined): string {
   if (!ssoRegion) return "us-east-1";
   return API_REGION_MAP[ssoRegion] ?? ssoRegion;
 }
-

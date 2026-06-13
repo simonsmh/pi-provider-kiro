@@ -60,10 +60,10 @@ const CAPACITY_LOG_FILE = join(CAPACITY_LOG_DIR, "capacity-retries.log");
 let capacityLogDirCreated = false;
 
 // Track pending log writes for abort cancellation
-let pendingLogWriteCount = 0;
+let _pendingLogWriteCount = 0;
 
 function logCapacityEvent(message: string): void {
-  pendingLogWriteCount++;
+  _pendingLogWriteCount++;
   (async () => {
     try {
       if (!capacityLogDirCreated) {
@@ -74,7 +74,7 @@ function logCapacityEvent(message: string): void {
     } catch {
       // best-effort logging, don't break the provider
     } finally {
-      pendingLogWriteCount--;
+      _pendingLogWriteCount--;
     }
   })();
 }
