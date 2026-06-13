@@ -291,7 +291,6 @@ export function streamKiro(
       const systemPrompt = context.systemPrompt ?? "";
       let retryCount = 0;
       const maxRetries = 3;
-      let skipAdditionalFields = false;
       const conversationId = options?.sessionId ?? crypto.randomUUID();
       while (retryCount <= maxRetries) {
         if (options?.signal?.aborted) throw options.signal.reason;
@@ -415,7 +414,7 @@ export function streamKiro(
         const supportsEffort = baseModel?.supportsEffort;
         const supportsThinking = baseModel?.reasoning || supportsEffort;
         let additionalModelRequestFields: Record<string, unknown> | undefined;
-        if (supportsThinking && !skipAdditionalFields) {
+        if (supportsThinking) {
           additionalModelRequestFields = {
             thinking: {
               type: thinkingEnabled ? "adaptive" : "disabled",
@@ -560,15 +559,6 @@ export function streamKiro(
             // exhausted capacity retries (INSUFFICIENT_MODEL_CAPACITY).
             if (isNonRetryableBodyError(errText) || isCapacityError(errText)) {
               throw new Error(`Kiro API error: ${errText || response.statusText}`);
-            }
-            // Model doesn't support additionalModelRequestFields — retry without it
-            if (
-              response.status === 400 &&
-              errText.includes("additionalModelRequestFields is not supported") &&
-              !skipAdditionalFields
-            ) {
-              skipAdditionalFields = true;
-              break; // break inner loop, continue outer loop to rebuild request
             }
             // Format error so pi-ai's isContextOverflow() recognizes it
             if (isTooBigError(response.status, errText)) {
