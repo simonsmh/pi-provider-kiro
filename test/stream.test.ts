@@ -8,7 +8,7 @@ import type {
   TextContent,
   ToolResultMessage,
 } from "@earendil-works/pi-ai";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { capacityRetryConfig, retryConfig } from "../src/retry.js";
 import { resetProfileArnCache, streamKiro } from "../src/stream.js";
 import type { KiroHistoryEntry } from "../src/transform.js";
@@ -109,9 +109,23 @@ function mockFetchChunked(chunks: string[]) {
 }
 
 describe("Feature 9: Streaming Integration", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // Mark profileArn as already resolved so tests don't see an extra fetch
     resetProfileArnCache(true);
+    // Isolate from the developer machine's real kiro-cli login state. Without
+    // this, a local Builder ID session would make stream.ts short-circuit the
+    // ListAvailableProfiles lookup, breaking tests that exercise that path.
+    // Tests needing specific credentials re-stub these via spyOn below.
+    const kiroCli = await import("../src/kiro-cli.js");
+    vi.spyOn(kiroCli, "getKiroCliCredentials").mockReturnValue(undefined);
+    vi.spyOn(kiroCli, "getKiroCliCredentialsAllowExpired").mockReturnValue(undefined);
+    // Also stub the refresh path so 403 tests never shell out to the real
+    // kiro-cli binary (a multi-second subprocess that breaks timing assertions).
+    vi.spyOn(kiroCli, "refreshViaKiroCli").mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("emits error when no credentials provided", async () => {
@@ -1664,6 +1678,9 @@ describe("Feature 9: Streaming Integration", () => {
       clientSecret: "secret",
       region: "us-east-1",
       authMethod: "idc",
+      // IAM Identity Center org (custom start URL) → not Builder ID, so the
+      // ListAvailableProfiles lookup path is exercised rather than short-circuited.
+      startUrl: "https://example.awsapps.com/start",
     });
 
     const stream = streamKiro(makeModel(), makeContext(), { apiKey: "stale-token" });

@@ -254,13 +254,13 @@ export function streamKiro(
           ?.profileArn || (options as unknown as { profileArn?: string })?.profileArn;
       const cliCreds = getKiroCliCredentials() ?? getKiroCliCredentialsAllowExpired();
       const cliProfileArn = cliCreds?.access === accessToken ? cliCreds.profileArn : undefined;
-      let profileArn = optionProfileArn || cliProfileArn || (await resolveProfileArn(accessToken, endpoint));
-      // Final fallback for AWS Builder ID tokens: the profile APIs reject them,
-      // so resolveProfileArn returns nothing. Use the shared ARN the official
-      // kiro-cli hardcodes, matching the active credential when it's Builder ID.
-      if (!profileArn && !isApiKey(accessToken) && isBuilderIdCredential(cliCreds)) {
-        profileArn = BUILDER_ID_PROFILE_ARN;
-      }
+      // AWS Builder ID tokens are not authorized for the profile APIs, so
+      // calling resolveProfileArn would always fail with a noisy 400. Use the
+      // shared ARN the official kiro-cli hardcodes and skip the lookup entirely.
+      const builderIdProfileArn =
+        !isApiKey(accessToken) && isBuilderIdCredential(cliCreds) ? BUILDER_ID_PROFILE_ARN : undefined;
+      let profileArn =
+        optionProfileArn || cliProfileArn || builderIdProfileArn || (await resolveProfileArn(accessToken, endpoint));
 
       // Trigger dynamic models cache update in the background if empty or stale
       const ep = new URL(endpoint);
@@ -541,15 +541,15 @@ export function streamKiro(
 
               // Re-resolve profileArn with fresh credentials
               profileArnCache.delete(endpoint);
+              const refreshedBuilderIdArn =
+                !isApiKey(accessToken) && isBuilderIdCredential(freshCreds) ? BUILDER_ID_PROFILE_ARN : undefined;
               const refreshedProfileArn =
                 (options as unknown as { credentials?: { profileArn?: string }; profileArn?: string })?.credentials
                   ?.profileArn ||
                 (options as unknown as { profileArn?: string })?.profileArn ||
-                freshCreds?.profileArn;
+                freshCreds?.profileArn ||
+                refreshedBuilderIdArn;
               profileArn = refreshedProfileArn || (await resolveProfileArn(accessToken, endpoint));
-              if (!profileArn && !isApiKey(accessToken) && isBuilderIdCredential(freshCreds)) {
-                profileArn = BUILDER_ID_PROFILE_ARN;
-              }
               const delayMs = exponentialBackoff(retryCount - 1, 500, MAX_RETRY_DELAY);
               await abortableDelay(delayMs, options?.signal);
               break; // break inner loop, continue outer loop
