@@ -23,7 +23,7 @@ import { parseKiroEvents } from "./event-parser.js";
 import { addPlaceholderTools, HISTORY_LIMIT, HISTORY_LIMIT_CONTEXT_WINDOW, truncateHistory } from "./history.js";
 import { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, refreshViaKiroCli } from "./kiro-cli.js";
 import { getCachedModels, resolveKiroModel } from "./models.js";
-import { BUILDER_ID_PROFILE_ARN, isApiKey, isBuilderIdCredential, kiroAuthHeaders } from "./oauth.js";
+import { BUILDER_ID_PROFILE_ARN, isApiKey, isBuilderIdCredential, kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
 import {
   capacityRetryConfig,
   exponentialBackoff,
@@ -149,6 +149,7 @@ async function resolveProfileArn(accessToken: string, endpoint: string): Promise
       headers: {
         "Content-Type": "application/x-amz-json-1.0",
         ...kiroAuthHeaders(accessToken),
+        ...kiroUserAgent("codewhispererruntime", "F,C"),
         "X-Amz-Target": target,
       },
       body: "{}",
@@ -479,8 +480,6 @@ export function streamKiro(
         let capacityRetryCount = 0;
         // Inner loop: retry capacity errors without consuming outer retry budget
         while (true) {
-          const mid = crypto.randomUUID().replace(/-/g, "");
-          const ua = `aws-sdk-rust/1.0.0 ua/2.1 os/other lang/rust api/codewhispererstreaming#1.28.3 m/E app/AmazonQ-For-CLI md/appVersion-1.28.3-${mid}`;
           debugLog("request.send", {
             attempt: retryCount,
             capacityAttempt: capacityRetryCount,
@@ -496,13 +495,12 @@ export function streamKiro(
               "Content-Type": "application/x-amz-json-1.0",
               Accept: "application/json",
               ...kiroAuthHeaders(accessToken),
+              ...kiroUserAgent("codewhispererstreaming", "F"),
               "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
               "x-amzn-codewhisperer-optout": "true",
               "amz-sdk-invocation-id": crypto.randomUUID(),
               "amz-sdk-request": "attempt=1; max=1",
               "x-amzn-kiro-agent-mode": "vibe",
-              "x-amz-user-agent": ua,
-              "user-agent": ua,
             },
             body: JSON.stringify(request),
             signal: options?.signal,

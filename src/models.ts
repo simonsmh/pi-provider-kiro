@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
 
 const CACHE_PATH = join(homedir(), ".pi", "agent", "kiro-models-cache.json");
 
@@ -163,9 +164,8 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       headers: {
         "Content-Type": "application/x-amz-json-1.0",
         "X-Amz-Target": "AmazonCodeWhispererService.ListAvailableModels",
-        Authorization: `Bearer ${accessToken}`,
-        // API keys (ksk_...) require this header or the control plane rejects them.
-        ...(accessToken.startsWith("ksk_") ? { tokentype: "API_KEY" } : {}),
+        ...kiroAuthHeaders(accessToken),
+        ...kiroUserAgent("codewhispererruntime", "F,C"),
       },
       body: JSON.stringify({
         origin: "KIRO_CLI",

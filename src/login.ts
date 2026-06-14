@@ -23,9 +23,21 @@ import {
   BUILDER_ID_START_URL,
   type KiroAuthMethod,
   type KiroCredentials,
+  kiroUserAgent,
   loginKiroWithApiKey,
   SSO_SCOPES,
 } from "./oauth.js";
+
+const KIRO_CLIENT_NAME = "Kiro CLI";
+/**
+ * OIDC requests during login share the ssooidc UA with metrics segment "E".
+ * Built lazily — oauth.ts imports login.ts, so evaluating kiroUserAgent at
+ * module load would hit a temporal-dead-zone on oauth.ts's UA constants.
+ */
+const oidcHeaders = (): Record<string, string> => ({
+  "Content-Type": "application/json",
+  ...kiroUserAgent("ssooidc", "E"),
+});
 
 type PromptFn = (p: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
 
@@ -163,9 +175,9 @@ async function tryRegisterAndAuthorize(
 
   const regResp = await fetch(`${oidcEndpoint}/client/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
+    headers: oidcHeaders(),
     body: JSON.stringify({
-      clientName: "pi-cli",
+      clientName: KIRO_CLIENT_NAME,
       clientType: "public",
       scopes: SSO_SCOPES,
       grantTypes: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
@@ -179,7 +191,7 @@ async function tryRegisterAndAuthorize(
 
   const devResp = await fetch(`${oidcEndpoint}/device_authorization`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
+    headers: oidcHeaders(),
     body: JSON.stringify({ clientId, clientSecret, startUrl }),
   });
   if (!devResp.ok) {
@@ -286,7 +298,7 @@ async function pollDeviceCode(
 
     const tokResp = await fetch(`${oidcEndpoint}/token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
+      headers: oidcHeaders(),
       body: JSON.stringify({
         clientId,
         clientSecret,
@@ -467,7 +479,7 @@ export async function runSocialLoginFlow(
         const actualRedirectUri = `http://localhost:3128${reqUrl.pathname === "/" ? "" : reqUrl.pathname}${loginOption ? `?login_option=${loginOption}` : ""}`;
         const response = await fetch(tokenUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
+          headers: oidcHeaders(),
           body: JSON.stringify({
             code: codeParam,
             code_verifier: codeVerifier,

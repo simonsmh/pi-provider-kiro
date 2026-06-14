@@ -23,6 +23,65 @@ export const BUILDER_ID_START_URL = "https://view.awsapps.com/start";
  */
 export const BUILDER_ID_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
 export const KIRO_DESKTOP_REFRESH_URL = "https://prod.{region}.auth.desktop.kiro.dev/refreshToken";
+
+/**
+ * User-Agent components matching the official kiro-cli 2.7.0 traffic.
+ *
+ * kiro-cli sends two related headers built by the AWS Rust SDK:
+ *   - `user-agent`:      carries `md/appVersion-<KIRO_VERSION>`
+ *   - `x-amz-user-agent`: carries a metrics segment `m/<...>` instead
+ *
+ * Both share the same `aws-sdk-rust/<SDK> ua/2.1 api/<service>/<API> os/macos
+ * lang/rust/<RUST> ... app/AmazonQ-For-CLI` skeleton. The `api/<service>`
+ * segment differs per endpoint:
+ *   - codewhispererstreaming → GenerateAssistantResponse, InvokeMCP
+ *   - codewhispererruntime   → ListAvailableModels
+ *   - ssooidc                → RegisterClient / token (login + refresh)
+ * Values captured from real kiro-cli 2.7.0 traffic.
+ */
+export const KIRO_SDK_VERSION = "1.3.15";
+export const KIRO_OIDC_SDK_VERSION = "1.3.10";
+export const KIRO_API_VERSION = "0.1.16551";
+export const KIRO_OIDC_API_VERSION = "1.92.0";
+export const KIRO_RUST_VERSION = "1.92.0";
+export const KIRO_OS = "macos";
+export const KIRO_VERSION = "2.7.0";
+export const KIRO_APP = "AmazonQ-For-CLI";
+
+/**
+ * The Kiro desktop auth service (`auth.desktop.kiro.dev`) is not an AWS SDK
+ * endpoint — official kiro-cli sends a plain `Kiro-CLI` User-Agent to it.
+ */
+export const KIRO_DESKTOP_USER_AGENT = "Kiro-CLI";
+
+export type KiroSdkApi = "codewhispererstreaming" | "codewhispererruntime" | "ssooidc";
+
+/**
+ * Build the `{ "user-agent", "x-amz-user-agent" }` header pair for a given
+ * Kiro/AWS service endpoint, matching official kiro-cli traffic.
+ *
+ * @param api      The SDK service segment (selects the endpoint family).
+ * @param metrics  The `m/...` metrics segment that goes only into
+ *                 `x-amz-user-agent` (e.g. "F" for streaming, "F,C" for
+ *                 ListAvailableModels, "E" for OIDC).
+ *
+ * Note: the OIDC endpoint is special — its `user-agent` is the bare
+ * `aws-sdk-rust/<sdk> os/macos lang/rust/<rust>` form (no `ua/`, `api/`,
+ * `md/`, or `app/` segments), while only `x-amz-user-agent` carries the full
+ * form. The codewhisperer endpoints put the full form in both.
+ */
+export function kiroUserAgent(api: KiroSdkApi, metrics: string): { "user-agent": string; "x-amz-user-agent": string } {
+  const sdk = api === "ssooidc" ? KIRO_OIDC_SDK_VERSION : KIRO_SDK_VERSION;
+  const apiVer = api === "ssooidc" ? KIRO_OIDC_API_VERSION : KIRO_API_VERSION;
+  const base = `aws-sdk-rust/${sdk} ua/2.1 api/${api}/${apiVer} os/${KIRO_OS} lang/rust/${KIRO_RUST_VERSION}`;
+  return {
+    "user-agent":
+      api === "ssooidc"
+        ? `aws-sdk-rust/${sdk} os/${KIRO_OS} lang/rust/${KIRO_RUST_VERSION}`
+        : `${base} md/appVersion-${KIRO_VERSION} app/${KIRO_APP}`,
+    "x-amz-user-agent": `${base} m/${metrics} app/${KIRO_APP}`,
+  };
+}
 export const SSO_SCOPES = [
   "codewhisperer:completions",
   "codewhisperer:analysis",
@@ -129,13 +188,13 @@ export async function loginKiroWithApiKey(callbacks: OAuthLoginCallbacks, apiKey
   const managementUrl = `https://management.${apiRegion}.kiro.dev/`;
 
   // GetProfile with an empty body returns the API key's own profile.
-  let profileArn: string | undefined;
   const resp = await fetch(managementUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-amz-json-1.0",
       "X-Amz-Target": "AmazonCodeWhispererService.GetProfile",
       ...kiroAuthHeaders(apiKey),
+      ...kiroUserAgent("codewhispererruntime", "F,C"),
     },
     body: "{}",
   });
@@ -154,7 +213,7 @@ export async function loginKiroWithApiKey(callbacks: OAuthLoginCallbacks, apiKey
   }
 
   const data = (await resp.json()) as { profile?: { arn?: string } };
-  profileArn = data.profile?.arn;
+  const profileArn = data.profile?.arn;
 
   const kiroCreds: KiroCredentials = {
     access: apiKey,
@@ -434,7 +493,7 @@ async function refreshKiroTokenDirect(credentials: OAuthCredentials): Promise<OA
     const url = KIRO_DESKTOP_REFRESH_URL.replace("{region}", region);
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
+      headers: { "Content-Type": "application/json", "User-Agent": KIRO_DESKTOP_USER_AGENT },
       body: JSON.stringify({ refreshToken }),
     });
     if (!response.ok) throw new Error(`Desktop token refresh failed: ${response.status}`);
@@ -464,7 +523,10 @@ async function refreshKiroTokenDirect(credentials: OAuthCredentials): Promise<OA
   const ssoEndpoint = `https://oidc.${region}.amazonaws.com`;
   const response = await fetch(`${ssoEndpoint}/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": "pi-cli" },
+    headers: {
+      "Content-Type": "application/json",
+      ...kiroUserAgent("ssooidc", "E"),
+    },
     body: JSON.stringify({ clientId, clientSecret, refreshToken, grantType: "refresh_token" }),
   });
   if (!response.ok) throw new Error(`Token refresh failed: ${response.status}`);
