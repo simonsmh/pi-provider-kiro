@@ -163,8 +163,6 @@ export function buildHistory(
       if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === "text") armContent += (block as TextContent).text;
-          else if (block.type === "thinking")
-            armContent = `<thinking>${(block as ThinkingContent).thinking}</thinking>\n\n${armContent}`;
           else if (block.type === "toolCall") {
             const tc = block as ToolCall;
             armToolUses.push({
