@@ -29,7 +29,11 @@ export default function (pi: ExtensionAPI) {
       getApiKey: (cred: OAuthCredentials) => cred.access,
       getCliCredentials: getKiroCliCredentials,
       modifyModels: (models: Model<Api>[], cred: OAuthCredentials) => {
-        const apiRegion = resolveApiRegion((cred as KiroCredentials).region);
+        const ssoRegion = resolveApiRegion((cred as KiroCredentials).region);
+        // If profileArn contains a region, prefer that for the runtime endpoint
+        const profileRegion = (cred as KiroCredentials).profileArn?.split(":")[3];
+        const apiRegion = profileRegion || ssoRegion;
+
         const cachedKiro = getCachedModels(apiRegion, (cred as KiroCredentials).profileArn);
         const nonKiro = models.filter((m: Model<Api>) => m.provider !== "kiro");
         const modelsToUse = cachedKiro.length > 0 ? cachedKiro : defaultModels;

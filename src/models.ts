@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
+import { isApiKey, kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
 
 const CACHE_PATH = join(homedir(), ".pi", "agent", "kiro-models-cache.json");
 
@@ -59,8 +59,6 @@ export function buildModelDef(
     ...(isOpus ? { firstTokenTimeout: 180_000 } : {}),
   };
 }
-
-const _DEFAULT_BASE_URL = "https://runtime.us-east-1.kiro.dev/";
 
 // Load models from disk cache at startup; empty until first successful auth.
 function loadDefaultModels(): KiroModelDef[] {
@@ -156,9 +154,59 @@ export function isCacheStale(region: string, profileArn?: string): boolean {
   }
 }
 
-export async function updateKiroModelsCache(accessToken: string, region: string, profileArn?: string): Promise<void> {
-  try {
+export async function discoverProfileArn(accessToken: string, preferredRegion: string): Promise<string | undefined> {
+  const regionsToTry = preferredRegion === "us-east-1" ? [preferredRegion] : [preferredRegion, "us-east-1"];
+
+  for (const region of regionsToTry) {
     const managementUrl = `https://management.${region}.kiro.dev/`;
+    const target = isApiKey(accessToken)
+      ? "AmazonCodeWhispererService.GetProfile"
+      : "AmazonCodeWhispererService.ListAvailableProfiles";
+
+    try {
+      const r = await fetch(managementUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-amz-json-1.0",
+          ...kiroAuthHeaders(accessToken),
+          ...kiroUserAgent("codewhispererruntime", "F,C"),
+          "X-Amz-Target": target,
+        },
+        body: "{}",
+      });
+
+      if (!r.ok) continue;
+
+      if (isApiKey(accessToken)) {
+        const j = (await r.json()) as { profile?: { arn?: string } };
+        if (j.profile?.arn) return j.profile.arn;
+      } else {
+        const j = (await r.json()) as { profiles?: Array<{ arn?: string }> };
+        const arn = j.profiles?.find((p) => p.arn)?.arn;
+        if (arn) return arn;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+export async function updateKiroModelsCache(
+  accessToken: string,
+  region: string,
+  profileArn?: string,
+): Promise<string | undefined> {
+  // If no profileArn provided, try to discover it
+  if (!profileArn) {
+    profileArn = await discoverProfileArn(accessToken, region);
+  }
+
+  // Use the profile's region for management calls if available
+  const effectiveRegion = profileArn?.split(":")[3] || region;
+
+  try {
+    const managementUrl = `https://management.${effectiveRegion}.kiro.dev/`;
     const response = await fetch(managementUrl, {
       method: "POST",
       headers: {
@@ -174,7 +222,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
     });
 
     if (!response.ok) {
-      return;
+      return profileArn;
     }
 
     const data = (await response.json()) as {
@@ -193,7 +241,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       }>;
     };
     const fetchedModels = data.models || [];
-    if (fetchedModels.length === 0) return;
+    if (fetchedModels.length === 0) return profileArn;
 
     const newModels = fetchedModels.map((fm) => {
       const kiroId = fm.modelId;
@@ -203,7 +251,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
       const hasThinkingSchema = !!schemaProps?.thinking;
       const hasEffortSchema = !!schemaProps?.output_config?.properties?.effort;
 
-      return buildModelDef(piId, `https://runtime.${region}.kiro.dev/`, hasThinkingSchema, hasEffortSchema);
+      return buildModelDef(piId, `https://runtime.${effectiveRegion}.kiro.dev/`, hasThinkingSchema, hasEffortSchema);
     });
 
     if (!newModels.some((m) => m.id === "auto")) {
@@ -212,7 +260,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
         name: "Auto",
         api: "kiro-api" as const,
         provider: "kiro" as const,
-        baseUrl: `https://runtime.${region}.kiro.dev/`,
+        baseUrl: `https://runtime.${effectiveRegion}.kiro.dev/`,
         reasoning: true,
         supportsEffort: false,
         input: ["text", "image"],
@@ -244,6 +292,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
   } catch (_error) {
     // Ignore fetch/cache errors
   }
+  return profileArn;
 }
 
 export function resolveKiroModel(modelId: string): string {

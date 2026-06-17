@@ -157,7 +157,10 @@ export async function loginKiro(
       const region = resolveApiRegion((creds as KiroCredentials).region);
       const kc = creds as KiroCredentials;
       const profileArn = kc.profileArn || (isBuilderIdCredential(kc) ? BUILDER_ID_PROFILE_ARN : undefined);
-      await updateKiroModelsCache(creds.access, region, profileArn);
+      const discoveredArn = await updateKiroModelsCache(creds.access, region, profileArn);
+      if (discoveredArn && !kc.profileArn) {
+        kc.profileArn = discoveredArn;
+      }
     } catch {
       // Ignore cache errors
     }
@@ -233,7 +236,10 @@ export async function loginKiroWithApiKey(callbacks: OAuthLoginCallbacks, apiKey
   if (!process.env.VITEST) {
     try {
       const { updateKiroModelsCache } = await import("./models.js");
-      await updateKiroModelsCache(kiroCreds.access, apiRegion, kiroCreds.profileArn);
+      const discoveredArn = await updateKiroModelsCache(kiroCreds.access, apiRegion, kiroCreds.profileArn);
+      if (discoveredArn && !kiroCreds.profileArn) {
+        kiroCreds.profileArn = discoveredArn;
+      }
     } catch {
       // Ignore cache errors
     }
@@ -405,7 +411,14 @@ export async function refreshKiroToken(credentials: OAuthCredentials): Promise<O
     try {
       const { resolveApiRegion, updateKiroModelsCache } = await import("./models.js");
       const region = resolveApiRegion((refreshed as KiroCredentials).region);
-      await updateKiroModelsCache(refreshed.access, region, (refreshed as KiroCredentials).profileArn);
+      const discoveredArn = await updateKiroModelsCache(
+        refreshed.access,
+        region,
+        (refreshed as KiroCredentials).profileArn,
+      );
+      if (discoveredArn && !(refreshed as KiroCredentials).profileArn) {
+        (refreshed as KiroCredentials).profileArn = discoveredArn;
+      }
     } catch {
       // Ignore cache errors
     }
