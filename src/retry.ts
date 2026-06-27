@@ -37,14 +37,12 @@ export function exponentialBackoff(attempt: number, baseMs: number, maxMs: numbe
 
 export const MAX_RETRY_DELAY = ENV_MAX_RETRY_DELAY ? parseInt(ENV_MAX_RETRY_DELAY, 10) || 10_000 : 10_000;
 
-export const TOO_BIG_PATTERNS = ["CONTENT_LENGTH_EXCEEDS_THRESHOLD", "Input is too long", "Improperly formed"];
+const TOO_BIG_PATTERNS = ["CONTENT_LENGTH_EXCEEDS_THRESHOLD", "Input is too long", "Improperly formed"];
 const NON_RETRYABLE_BODY_PATTERNS = ["MONTHLY_REQUEST_COUNT"];
 const CAPACITY_PATTERN = "INSUFFICIENT_MODEL_CAPACITY";
 
-export const CAPACITY_MAX_RETRIES = ENV_CAPACITY_MAX_RETRIES ? parseInt(ENV_CAPACITY_MAX_RETRIES, 10) || 3 : 3;
-export const CAPACITY_BASE_DELAY_MS = ENV_CAPACITY_BASE_DELAY_MS
-  ? parseInt(ENV_CAPACITY_BASE_DELAY_MS, 10) || 5_000
-  : 5_000;
+const CAPACITY_MAX_RETRIES = ENV_CAPACITY_MAX_RETRIES ? parseInt(ENV_CAPACITY_MAX_RETRIES, 10) || 3 : 3;
+const CAPACITY_BASE_DELAY_MS = ENV_CAPACITY_BASE_DELAY_MS ? parseInt(ENV_CAPACITY_BASE_DELAY_MS, 10) || 5_000 : 5_000;
 
 // Mutable capacity config for testing
 export const capacityRetryConfig = {

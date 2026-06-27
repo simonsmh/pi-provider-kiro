@@ -193,9 +193,6 @@ function tryKiroCliToken(
   };
 }
 
-// Re-export the internal function for use by getKiroCliSocialToken
-export { tryKiroCliToken };
-
 /**
  * Get the social token (Google/GitHub) from kiro-cli if available.
  * Returns undefined if no valid social token exists.

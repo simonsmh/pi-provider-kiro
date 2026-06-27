@@ -11,7 +11,6 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-a
 import { getKiroIdeCredentials, getKiroIdeCredentialsAllowExpired } from "./kiro-ide.js";
 import { interactiveLogin } from "./login.js";
 
-export const SSO_OIDC_ENDPOINT = "https://oidc.us-east-1.amazonaws.com";
 export const BUILDER_ID_START_URL = "https://view.awsapps.com/start";
 /**
  * Shared profile ARN that the official kiro-cli hardcodes for AWS Builder ID
@@ -22,7 +21,7 @@ export const BUILDER_ID_START_URL = "https://view.awsapps.com/start";
  * GenerateAssistantResponse requests. Captured from kiro-cli 2.7.0 traffic.
  */
 export const BUILDER_ID_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
-export const KIRO_DESKTOP_REFRESH_URL = "https://prod.{region}.auth.desktop.kiro.dev/refreshToken";
+const KIRO_DESKTOP_REFRESH_URL = "https://prod.{region}.auth.desktop.kiro.dev/refreshToken";
 
 /**
  * User-Agent components matching the official kiro-cli 2.7.0 traffic.
@@ -39,22 +38,22 @@ export const KIRO_DESKTOP_REFRESH_URL = "https://prod.{region}.auth.desktop.kiro
  *   - ssooidc                → RegisterClient / token (login + refresh)
  * Values captured from real kiro-cli 2.7.0 traffic.
  */
-export const KIRO_SDK_VERSION = "1.3.15";
-export const KIRO_OIDC_SDK_VERSION = "1.3.10";
-export const KIRO_API_VERSION = "0.1.16551";
-export const KIRO_OIDC_API_VERSION = "1.92.0";
-export const KIRO_RUST_VERSION = "1.92.0";
-export const KIRO_OS = "macos";
-export const KIRO_VERSION = "2.7.0";
-export const KIRO_APP = "AmazonQ-For-CLI";
+const KIRO_SDK_VERSION = "1.3.15";
+const KIRO_OIDC_SDK_VERSION = "1.3.10";
+const KIRO_API_VERSION = "0.1.16551";
+const KIRO_OIDC_API_VERSION = "1.92.0";
+const KIRO_RUST_VERSION = "1.92.0";
+const KIRO_OS = "macos";
+const KIRO_VERSION = "2.7.0";
+const KIRO_APP = "AmazonQ-For-CLI";
 
 /**
  * The Kiro desktop auth service (`auth.desktop.kiro.dev`) is not an AWS SDK
  * endpoint — official kiro-cli sends a plain `Kiro-CLI` User-Agent to it.
  */
-export const KIRO_DESKTOP_USER_AGENT = "Kiro-CLI";
+const KIRO_DESKTOP_USER_AGENT = "Kiro-CLI";
 
-export type KiroSdkApi = "codewhispererstreaming" | "codewhispererruntime" | "ssooidc";
+type KiroSdkApi = "codewhispererstreaming" | "codewhispererruntime" | "ssooidc";
 
 /**
  * Build the `{ "user-agent", "x-amz-user-agent" }` header pair for a given
@@ -91,7 +90,7 @@ export const SSO_SCOPES = [
 ];
 
 export type KiroAuthMethod = "idc" | "desktop" | "apikey";
-export type KiroLoginMethod = "auto" | "builder-id" | "google" | "github" | "apikey";
+type KiroLoginMethod = "auto" | "builder-id" | "google" | "github" | "apikey";
 
 export interface KiroCredentials extends OAuthCredentials {
   clientId: string;
@@ -391,14 +390,6 @@ async function useCachedCascade(callbacks: OAuthLoginCallbacks): Promise<OAuthCr
   }
 
   throw new Error("No valid cached credentials found");
-}
-
-/**
- * Backward-compatible alias for loginKiro with Builder ID.
- * @deprecated Use loginKiro instead.
- */
-export async function loginKiroBuilderID(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-  return loginKiro(callbacks, "builder-id");
 }
 
 // Token refresh buffer (5 minutes) baked into our expires timestamps at creation time.
