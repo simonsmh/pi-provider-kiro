@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildModelDef,
   defaultModels,
+  discoverProfileArn,
   KIRO_MODEL_IDS,
   resolveApiRegion,
   resolveKiroModel,
@@ -119,6 +120,87 @@ describe("Feature 2: Model Definitions", () => {
   describe("defaultModels", () => {
     it("is an array (populated from cache if available)", () => {
       expect(Array.isArray(defaultModels)).toBe(true);
+    });
+  });
+
+  describe("discoverProfileArn", () => {
+    it("returns profile ARN from the first region when found", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ profiles: [{ arn: "arn:aws:codewhisperer:eu-central-1:123:profile/test" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const arn = await discoverProfileArn("tok", "eu-central-1");
+      expect(arn).toBe("arn:aws:codewhisperer:eu-central-1:123:profile/test");
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(mockFetch.mock.calls[0][0]).toBe("https://management.eu-central-1.kiro.dev/");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("falls back to us-east-1 when preferred region returns no profiles", async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ profiles: [] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ profiles: [{ arn: "arn:aws:codewhisperer:us-east-1:123:profile/test" }] }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const arn = await discoverProfileArn("tok", "eu-central-1");
+      expect(arn).toBe("arn:aws:codewhisperer:us-east-1:123:profile/test");
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls[0][0]).toBe("https://management.eu-central-1.kiro.dev/");
+      expect(mockFetch.mock.calls[1][0]).toBe("https://management.us-east-1.kiro.dev/");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not double-call us-east-1 when it is already the preferred region", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ profiles: [{ arn: "arn:aws:codewhisperer:us-east-1:123:profile/test" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const arn = await discoverProfileArn("tok", "us-east-1");
+      expect(arn).toBe("arn:aws:codewhisperer:us-east-1:123:profile/test");
+      expect(mockFetch).toHaveBeenCalledOnce();
+
+      vi.unstubAllGlobals();
+    });
+
+    it("returns undefined when no profile found in any region", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ profiles: [] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const arn = await discoverProfileArn("tok", "eu-central-1");
+      expect(arn).toBeUndefined();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      vi.unstubAllGlobals();
+    });
+
+    it("uses GetProfile for API keys instead of ListAvailableProfiles", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ profile: { arn: "arn:aws:codewhisperer:us-east-1:123:profile/api-key" } }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const arn = await discoverProfileArn("ksk_test_key", "us-east-1");
+      expect(arn).toBe("arn:aws:codewhisperer:us-east-1:123:profile/api-key");
+      expect(mockFetch.mock.calls[0][1].headers["X-Amz-Target"]).toBe("AmazonCodeWhispererService.GetProfile");
+
+      vi.unstubAllGlobals();
     });
   });
 });

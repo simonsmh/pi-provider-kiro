@@ -22,7 +22,7 @@ import { debugEnabled, debugLog } from "./debug.js";
 import { parseKiroEvents } from "./event-parser.js";
 import { addPlaceholderTools, HISTORY_LIMIT, HISTORY_LIMIT_CONTEXT_WINDOW, truncateHistory } from "./history.js";
 import { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, refreshViaKiroCli } from "./kiro-cli.js";
-import { getCachedModels, resolveKiroModel } from "./models.js";
+import { discoverProfileArn, getCachedModels, resolveKiroModel } from "./models.js";
 import { BUILDER_ID_PROFILE_ARN, isApiKey, isBuilderIdCredential, kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
 import {
   capacityRetryConfig,
@@ -129,45 +129,11 @@ async function resolveProfileArn(accessToken: string, endpoint: string): Promise
   if (profileArnCache.has(endpoint)) return profileArnCache.get(endpoint);
   if (profileArnPending.has(endpoint)) return undefined;
   try {
-    // ListAvailableProfiles is a management-plane operation. Hitting the
-    // runtime endpoint (runtime.{region}.kiro.dev) returns 400 Bad Request —
-    // it must go to management.{region}.kiro.dev, matching usage.ts/models.ts.
     const runtime = new URL(endpoint);
     const region = runtime.hostname.split(".")[1] || "us-east-1";
-    const managementUrl = `https://management.${region}.kiro.dev/`;
 
-    // API keys cannot call ListAvailableProfiles ("Invalid token"), but
-    // GetProfile with an empty body returns the key's own profile. OIDC/social
-    // tokens use ListAvailableProfiles.
-    const useApiKey = accessToken.startsWith("ksk_");
-    const target = useApiKey
-      ? "AmazonCodeWhispererService.GetProfile"
-      : "AmazonCodeWhispererService.ListAvailableProfiles";
+    const arn = await discoverProfileArn(accessToken, region);
 
-    const r = await fetch(managementUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-amz-json-1.0",
-        ...kiroAuthHeaders(accessToken),
-        ...kiroUserAgent("codewhispererruntime", "F,C"),
-        "X-Amz-Target": target,
-      },
-      body: "{}",
-    });
-    if (!r.ok) {
-      console.warn(
-        `[pi-provider-kiro] Failed to resolve profileArn: ${target.split(".").pop()} returned ${r.status} ${r.statusText}. Will retry on the next request.`,
-      );
-      return undefined;
-    }
-    let arn: string | undefined;
-    if (useApiKey) {
-      const j = (await r.json()) as { profile?: { arn?: string } };
-      arn = j.profile?.arn;
-    } else {
-      const j = (await r.json()) as { profiles?: Array<{ arn?: string }> };
-      arn = j.profiles?.find((p) => p.arn)?.arn;
-    }
     if (!arn) {
       debugLog("profileArn.empty", {
         message: "Profile lookup returned no ARN; this is expected for some social-login tokens.",

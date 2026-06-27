@@ -94,7 +94,7 @@ describe("Feature 1: Extension Registration", () => {
       reasoning: true,
       supportsEffort: false,
       input: ["text" as const],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const,
       contextWindow: 100000,
       maxTokens: 8192,
     };
@@ -136,7 +136,7 @@ describe("Feature 1: Extension Registration", () => {
         reasoning: true,
         supportsEffort: true,
         input: ["text" as const],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const,
         contextWindow: 100000,
         maxTokens: 8192,
       },
@@ -185,5 +185,40 @@ describe("Feature 1: Extension Registration", () => {
         }),
       ]),
     );
+  });
+
+  it("modifyModels prefers profileArn region over SSO-mapped region for baseUrl", async () => {
+    const fakeModel = {
+      id: "claude-sonnet-4-6",
+      name: "Test",
+      api: "kiro-api" as const,
+      provider: "kiro" as const,
+      baseUrl: "old",
+      reasoning: true,
+      supportsEffort: false,
+      input: ["text" as const],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const,
+      contextWindow: 100000,
+      maxTokens: 8192,
+    };
+    vi.mocked(getCachedModels).mockReturnValue([fakeModel]);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    const models = [{ ...fakeModel, baseUrl: "old" }];
+    // SSO region is eu-west-1 (maps to eu-central-1), but profile is in us-east-1
+    const creds = {
+      access: "x",
+      refresh: "x",
+      expires: 0,
+      clientId: "",
+      clientSecret: "",
+      region: "eu-west-1",
+      profileArn: "arn:aws:codewhisperer:us-east-1:123:profile/test",
+    };
+    const modified = config.oauth.modifyModels(models, creds);
+    expect(modified[0].baseUrl).toBe("https://runtime.us-east-1.kiro.dev/");
   });
 });
