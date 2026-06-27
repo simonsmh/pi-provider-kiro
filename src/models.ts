@@ -33,6 +33,11 @@ export function buildModelDef(
 ): KiroModelDef {
   const isClaude = piId.startsWith("claude");
   const isOpus = piId.includes("opus");
+  // Older Claude models (no minor version or minor < 6) have a 200K window;
+  // newer ones (minor >= 6, e.g. claude-sonnet-4-6) have 1M.
+  const lastDash = piId.lastIndexOf("-");
+  const minorVer = isClaude && lastDash > 0 ? Number.parseInt(piId.slice(lastDash + 1), 10) : undefined;
+  const has1MContext = isClaude && Number.isFinite(minorVer) && (minorVer as number) >= 6;
   const name =
     piId === "auto"
       ? "Auto"
@@ -54,7 +59,7 @@ export function buildModelDef(
       : {}),
     input: isClaude || piId === "auto" ? ["text", "image"] : ["text"],
     cost: ZERO_COST,
-    contextWindow: isClaude || piId === "auto" ? 1000000 : 200000,
+    contextWindow: has1MContext || piId === "auto" ? 1000000 : 200000,
     maxTokens: isOpus ? 128000 : isClaude || piId === "auto" ? 65536 : 8192,
     ...(isOpus ? { firstTokenTimeout: 180_000 } : {}),
   };
@@ -279,7 +284,9 @@ export async function updateKiroModelsCache(
       }
     }
 
-    const key = getCacheKey(region, profileArn);
+    // Key with the effective/profile region so readers that look up by
+    // profileArn.split(':')[3] find the same entry we just wrote.
+    const key = getCacheKey(effectiveRegion, profileArn);
     cache[key] = {
       updatedAt: Date.now(),
       models: newModels,

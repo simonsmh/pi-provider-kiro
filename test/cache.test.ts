@@ -127,5 +127,44 @@ describe("Kiro Models Cache Scoping", () => {
 
       vi.unstubAllGlobals();
     });
+
+    it("keys cache under profile ARN region when it differs from SSO-mapped region", async () => {
+      // SSO region eu-west-1 maps to eu-central-1 via API_REGION_MAP,
+      // but the profile ARN lives in us-east-1. The cache should be keyed
+      // under us-east-1 so readers using profileArn.split(':')[3] find it.
+      const profileArn = "arn:aws:codewhisperer:us-east-1:123456:profile/test";
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            models: [
+              {
+                modelId: "claude-sonnet-4.6",
+                additionalModelRequestFieldsSchema: {
+                  properties: { thinking: {} },
+                },
+              },
+            ],
+          }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      let writtenData = "";
+      vi.mocked(writeFileSync).mockImplementation((_path, data) => {
+        writtenData = data as string;
+        return undefined;
+      });
+
+      // region is the SSO-mapped region (eu-central-1), but profile ARN is in us-east-1
+      await updateKiroModelsCache("token", "eu-central-1", profileArn);
+
+      const parsed = JSON.parse(writtenData);
+      // Should be keyed under the profile ARN's region (us-east-1), not eu-central-1
+      expect(parsed[`us-east-1#${profileArn}`]).toBeDefined();
+      expect(parsed[`eu-central-1#${profileArn}`]).toBeUndefined();
+
+      vi.unstubAllGlobals();
+    });
   });
 });

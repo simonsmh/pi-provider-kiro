@@ -91,6 +91,21 @@ describe("Feature 2: Model Definitions", () => {
       expect(m.firstTokenTimeout).toBe(180000);
     });
 
+    it("uses 200K context window for older Claude models without minor version", () => {
+      const m = buildModelDef("claude-sonnet-4", "https://example.com", true, false);
+      expect(m.contextWindow).toBe(200000);
+    });
+
+    it("uses 200K context window for older Claude models with minor version < 6", () => {
+      const m = buildModelDef("claude-sonnet-4-5", "https://example.com", true, false);
+      expect(m.contextWindow).toBe(200000);
+    });
+
+    it("uses 1M context window for newer Claude models with minor version >= 6", () => {
+      const m = buildModelDef("claude-sonnet-4-6", "https://example.com", true, false);
+      expect(m.contextWindow).toBe(1000000);
+    });
+
     it("constructs standard non-Claude model definition", () => {
       const m = buildModelDef("deepseek-3-2", "https://example.com", true, false);
       expect(m).toEqual({
