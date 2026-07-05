@@ -6,6 +6,7 @@ import {
   exponentialBackoff,
   FIRST_TOKEN_TIMEOUT,
   isCapacityError,
+  isMalformedRequestBodyError,
   isNonRetryableBodyError,
   isTooBigError,
   MAX_RETRY_DELAY,
@@ -80,8 +81,8 @@ describe("isTooBigError", () => {
     expect(isTooBigError(400, "Input is too long for model")).toBe(true);
   });
 
-  it("returns true for 400 with 'Improperly formed'", () => {
-    expect(isTooBigError(400, "Improperly formed request")).toBe(true);
+  it("returns false for generic 400 'Improperly formed'", () => {
+    expect(isTooBigError(400, "Improperly formed request")).toBe(false);
   });
 
   it("returns false for 400 without matching pattern", () => {
@@ -91,6 +92,18 @@ describe("isTooBigError", () => {
   it("returns false for non-413/400 status codes", () => {
     expect(isTooBigError(429, "CONTENT_LENGTH_EXCEEDS_THRESHOLD")).toBe(false);
     expect(isTooBigError(500, "Input is too long")).toBe(false);
+  });
+});
+
+describe("isMalformedRequestBodyError", () => {
+  it("detects Kiro request-shape validator errors", () => {
+    expect(isMalformedRequestBodyError(400, "Improperly formed request")).toBe(true);
+    expect(isMalformedRequestBodyError(400, "REQUEST_BODY_INVALID")).toBe(true);
+  });
+
+  it("ignores non-400 and unrelated bodies", () => {
+    expect(isMalformedRequestBodyError(413, "Improperly formed request")).toBe(false);
+    expect(isMalformedRequestBodyError(400, "Input is too long")).toBe(false);
   });
 });
 

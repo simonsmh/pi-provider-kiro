@@ -116,6 +116,7 @@ describe("Feature 6: History Management", () => {
         e.assistantResponseMessage?.toolUses?.some((t: KiroToolUse) => t.name === "unknown_tool"),
       );
       expect(synthetic).toBeDefined();
+      expect(synthetic?.assistantResponseMessage?.toolUses?.[0]?.input).toEqual({});
     });
 
     it("does not inject when tool calls already exist", () => {

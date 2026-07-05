@@ -37,7 +37,8 @@ export function exponentialBackoff(attempt: number, baseMs: number, maxMs: numbe
 
 export const MAX_RETRY_DELAY = ENV_MAX_RETRY_DELAY ? parseInt(ENV_MAX_RETRY_DELAY, 10) || 10_000 : 10_000;
 
-const TOO_BIG_PATTERNS = ["CONTENT_LENGTH_EXCEEDS_THRESHOLD", "Input is too long", "Improperly formed"];
+const TOO_BIG_PATTERNS = ["CONTENT_LENGTH_EXCEEDS_THRESHOLD", "Input is too long"];
+const MALFORMED_REQUEST_PATTERNS = ["Improperly formed request", "REQUEST_BODY_INVALID"];
 const NON_RETRYABLE_BODY_PATTERNS = ["MONTHLY_REQUEST_COUNT"];
 const CAPACITY_PATTERN = "INSUFFICIENT_MODEL_CAPACITY";
 
@@ -53,6 +54,11 @@ export const capacityRetryConfig = {
 /** Check whether an HTTP error represents a "request too large" condition. */
 export function isTooBigError(status: number, errorText: string): boolean {
   return status === 413 || (status === 400 && TOO_BIG_PATTERNS.some((p) => errorText.includes(p)));
+}
+
+/** Check whether a 400 body is Kiro's generic request-shape validator. */
+export function isMalformedRequestBodyError(status: number, errorText: string): boolean {
+  return status === 400 && MALFORMED_REQUEST_PATTERNS.some((p) => errorText.includes(p));
 }
 
 /** Check whether the response body contains a Kiro-specific non-retryable marker. */
