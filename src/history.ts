@@ -60,7 +60,7 @@ export function injectSyntheticToolCalls(history: KiroHistoryEntry[]): KiroHisto
         result.push({
           assistantResponseMessage: {
             content: "Tool calls were made.",
-            toolUses: orphaned.map((tr) => ({ name: "unknown_tool", toolUseId: tr.toolUseId, input: {} })),
+            toolUses: orphaned.map((tr) => ({ name: "unknown_tool", toolUseId: tr.toolUseId, input: "{}" })),
           },
         });
         for (const tr of orphaned) validIds.add(tr.toolUseId);

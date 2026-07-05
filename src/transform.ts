@@ -18,7 +18,7 @@ export interface KiroImage {
 export interface KiroToolUse {
   name: string;
   toolUseId: string;
-  input: Record<string, unknown>;
+  input: string;
 }
 export interface KiroToolResult {
   content: Array<{ text?: string; json?: unknown }>;
@@ -168,7 +168,7 @@ export function buildHistory(
             armToolUses.push({
               name: tc.name,
               toolUseId: tc.id,
-              input: typeof tc.arguments === "string" ? JSON.parse(tc.arguments) : tc.arguments,
+              input: typeof tc.arguments === "string" ? tc.arguments : JSON.stringify(tc.arguments),
             });
           }
         }

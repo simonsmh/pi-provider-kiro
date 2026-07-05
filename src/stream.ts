@@ -43,6 +43,7 @@ import {
   formatToolResultContent,
   getContentText,
   type KiroHistoryEntry,
+  type KiroToolUse,
   type KiroImage,
   type KiroToolResult,
   type KiroToolSpec,
@@ -281,7 +282,7 @@ export function streamKiro(
         if (firstMsg?.role === "assistant") {
           const am = firstMsg as AssistantMessage;
           let armContent = "";
-          const armToolUses: Array<{ name: string; toolUseId: string; input: Record<string, unknown> }> = [];
+          const armToolUses: KiroToolUse[] = [];
           if (Array.isArray(am.content))
             for (const b of am.content) {
               if (b.type === "text") armContent += (b as TextContent).text;
@@ -294,8 +295,8 @@ export function streamKiro(
                   toolUseId: tc.id,
                   input:
                     typeof tc.arguments === "string"
-                      ? JSON.parse(tc.arguments)
-                      : (tc.arguments as Record<string, unknown>),
+                      ? tc.arguments
+                      : JSON.stringify(tc.arguments),
                 });
               }
             }
