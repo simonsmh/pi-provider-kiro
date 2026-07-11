@@ -5,13 +5,14 @@ import type {
   Context,
   ImageContent,
   Model,
+  SimpleStreamOptions,
   TextContent,
   ToolResultMessage,
 } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { capacityRetryConfig, retryConfig } from "../src/retry.js";
 import { resetProfileArnCache, streamKiro } from "../src/stream.js";
-import { normalizeKiroToolUseId, type KiroHistoryEntry } from "../src/transform.js";
+import { type KiroHistoryEntry, normalizeKiroToolUseId } from "../src/transform.js";
 
 vi.mock("../src/models.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/models.js")>();
@@ -47,7 +48,9 @@ const zeroUsage = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-function makeModel(overrides?: Partial<Model<Api>>): Model<Api> {
+type KiroModelOverrides = Partial<Model<Api>> & { supportsEffort?: boolean };
+
+function makeModel(overrides?: KiroModelOverrides): Model<Api> {
   return {
     id: "claude-sonnet-4-5",
     name: "Sonnet",
@@ -871,7 +874,7 @@ describe("Feature 9: Streaming Integration", () => {
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     const uimc = body.conversationState.currentMessage.userInputMessage.userInputMessageContext;
     expect(uimc?.tools).toBeDefined();
-    const toolNames = uimc.tools.map((t: any) => t.toolSpecification.name);
+    const toolNames = uimc.tools.map((t: { toolSpecification: { name: string } }) => t.toolSpecification.name);
     expect(toolNames).toContain("bash");
     expect(toolNames).toContain("calc");
 
@@ -917,7 +920,7 @@ describe("Feature 9: Streaming Integration", () => {
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     const uimc = body.conversationState.currentMessage.userInputMessage.userInputMessageContext;
     expect(uimc?.tools).toBeDefined();
-    const toolNames = uimc.tools.map((t: any) => t.toolSpecification.name);
+    const toolNames = uimc.tools.map((t: { toolSpecification: { name: string } }) => t.toolSpecification.name);
     expect(toolNames).toContain("calc");
 
     vi.unstubAllGlobals();
@@ -2469,7 +2472,10 @@ describe("Feature 9: Streaming Integration", () => {
     for (const c of cases) {
       mockFetch.mockClear();
       const model = makeModel({ id: "claude-opus-4-8", reasoning: true });
-      const stream = streamKiro(model, makeContext(), { apiKey: "tok", reasoning: c.input as any });
+      const stream = streamKiro(model, makeContext(), {
+        apiKey: "tok",
+        reasoning: c.input as unknown as SimpleStreamOptions["reasoning"],
+      });
       await collect(stream);
 
       const requestBody = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -2500,8 +2506,11 @@ describe("Feature 9: Streaming Integration", () => {
 
     for (const c of cases) {
       mockFetch.mockClear();
-      const model = makeModel({ id: "claude-sonnet-4-5", reasoning: true, supportsEffort: true } as any);
-      const stream = streamKiro(model, makeContext(), { apiKey: "tok", reasoning: c.input as any });
+      const model = makeModel({ id: "claude-sonnet-4-5", reasoning: true, supportsEffort: true });
+      const stream = streamKiro(model, makeContext(), {
+        apiKey: "tok",
+        reasoning: c.input as unknown as SimpleStreamOptions["reasoning"],
+      });
       await collect(stream);
 
       const requestBody = JSON.parse(mockFetch.mock.calls[0][1].body);

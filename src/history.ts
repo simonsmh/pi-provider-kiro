@@ -1,6 +1,6 @@
 // Feature 6: History Management
 
-import { normalizeKiroToolUseId, type KiroHistoryEntry, type KiroToolSpec } from "./transform.js";
+import { type KiroHistoryEntry, type KiroToolSpec, normalizeKiroToolUseId } from "./transform.js";
 
 export const HISTORY_LIMIT = 850000;
 /** The context window size (in tokens) that HISTORY_LIMIT was calibrated for. */
@@ -60,7 +60,11 @@ export function injectSyntheticToolCalls(history: KiroHistoryEntry[]): KiroHisto
         result.push({
           assistantResponseMessage: {
             content: "Tool calls were made.",
-            toolUses: orphaned.map((tr) => ({ name: "unknown_tool", toolUseId: normalizeKiroToolUseId(tr.toolUseId), input: {} })),
+            toolUses: orphaned.map((tr) => ({
+              name: "unknown_tool",
+              toolUseId: normalizeKiroToolUseId(tr.toolUseId),
+              input: {},
+            })),
           },
         });
         for (const tr of orphaned) validIds.add(tr.toolUseId);

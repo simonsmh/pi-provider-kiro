@@ -153,17 +153,30 @@ describe("Feature 5: Message Transformation", () => {
         },
       ];
       const schema = convertToolsToKiro(tools)[0].toolSpecification.inputSchema.json;
+      type JsonSchemaNode = {
+        additionalProperties?: unknown;
+        format?: unknown;
+        maxLength?: unknown;
+        minLength?: unknown;
+        minimum?: unknown;
+        oneOf?: unknown;
+        pattern?: unknown;
+        properties?: Record<string, JsonSchemaNode>;
+        required?: unknown;
+        type?: unknown;
+      };
+      const properties = schema.properties as Record<string, JsonSchemaNode>;
       expect(schema.additionalProperties).toBeUndefined();
-      expect((schema.properties as any).filename.pattern).toBeUndefined();
-      expect((schema.properties as any).filename.minLength).toBeUndefined();
-      expect((schema.properties as any).filename.maxLength).toBeUndefined();
-      expect((schema.properties as any).max_lines.minimum).toBeUndefined();
-      expect((schema.properties as any).options.additionalProperties).toBeUndefined();
-      expect((schema.properties as any).options.required).toBeUndefined();
-      expect((schema.properties as any).options.properties.format.type).toBe("string");
-      expect((schema.properties as any).options.properties.pattern.type).toBe("string");
-      expect((schema.properties as any).options.properties.pattern.format).toBeUndefined();
-      expect((schema.properties as any).qa.oneOf).toBeUndefined();
+      expect(properties.filename.pattern).toBeUndefined();
+      expect(properties.filename.minLength).toBeUndefined();
+      expect(properties.filename.maxLength).toBeUndefined();
+      expect(properties.max_lines.minimum).toBeUndefined();
+      expect(properties.options?.additionalProperties).toBeUndefined();
+      expect(properties.options?.required).toBeUndefined();
+      expect(properties.options?.properties?.format?.type).toBe("string");
+      expect(properties.options?.properties?.pattern?.type).toBe("string");
+      expect(properties.options?.properties?.pattern?.format).toBeUndefined();
+      expect(properties.qa?.oneOf).toBeUndefined();
     });
 
     it("truncates tool descriptions to Kiro's limit", () => {
@@ -229,8 +242,8 @@ describe("Feature 5: Message Transformation", () => {
       a.content = [{ type: "toolCall", id: rawId, name: "bash", arguments: {} }];
       const msgs: Message[] = [user("go"), a, toolResult(rawId, "ok"), user("next")];
       const { history } = buildHistory(msgs, "M");
-      const toolUseId = history.find((h) => h.assistantResponseMessage?.toolUses)?.assistantResponseMessage?.toolUses?.[0]
-        .toolUseId;
+      const toolUseId = history.find((h) => h.assistantResponseMessage?.toolUses)?.assistantResponseMessage
+        ?.toolUses?.[0].toolUseId;
       const toolResultId = history.find((h) => h.userInputMessage?.userInputMessageContext?.toolResults)
         ?.userInputMessage?.userInputMessageContext?.toolResults?.[0].toolUseId;
       expect(toolUseId).toBe(normalizeKiroToolUseId(rawId));

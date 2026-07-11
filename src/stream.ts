@@ -51,8 +51,8 @@ import {
   type KiroUserInputMessage,
   normalizeKiroToolUseId,
   normalizeMessages,
-  sanitizeSurrogates,
   safeParseArgs,
+  sanitizeSurrogates,
   TOOL_RESULT_LIMIT,
   truncate,
 } from "./transform.js";
@@ -242,10 +242,8 @@ export function streamKiro(
       }
 
       const kiroModelId = resolveKiroModel(model.id);
-      const thinkingEnabled =
-        (options?.reasoning as any) !== false &&
-        (options?.reasoning as any) !== "off" &&
-        (!!options?.reasoning || model.reasoning);
+      const reasoning = options?.reasoning as unknown;
+      const thinkingEnabled = reasoning !== false && reasoning !== "off" && (!!reasoning || model.reasoning);
       debugLog("request.init", {
         endpoint,
         model: model.id,
@@ -378,9 +376,9 @@ export function streamKiro(
           const imgs = extractImages(firstMsg);
           if (imgs.length > 0) currentImages = convertImagesToKiro(imgs as ImageContent[]);
         }
-        const baseModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) || (model as any);
-        const supportsEffort = baseModel?.supportsEffort;
-        const supportsThinking = baseModel?.reasoning || supportsEffort;
+        const baseModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) ?? model;
+        const supportsEffort = "supportsEffort" in baseModel && baseModel.supportsEffort === true;
+        const supportsThinking = baseModel.reasoning || supportsEffort;
         let additionalModelRequestFields: Record<string, unknown> | undefined;
         if (supportsThinking) {
           additionalModelRequestFields = {

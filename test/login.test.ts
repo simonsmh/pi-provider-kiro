@@ -12,8 +12,19 @@ vi.mock("../src/kiro-cli.js", () => ({
   saveKiroCliCredentials: vi.fn(),
 }));
 
-const mockHttpServer: any = {
-  listen: vi.fn((_port, cb) => {
+type MockHttpHandler = (
+  request: { url?: string; headers: { host?: string } },
+  response: { writeHead: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> },
+) => void;
+type MockHttpServer = {
+  handler?: MockHttpHandler;
+  listen: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+};
+
+const mockHttpServer: MockHttpServer = {
+  listen: vi.fn((_port: number, cb?: () => void) => {
     if (cb) cb();
     if (mockHttpServer.handler) {
       const mockReq = { url: "/?code=mock_code&state=mock_state", headers: { host: "localhost:3128" } };
@@ -30,7 +41,7 @@ const mockHttpServer: any = {
 
 vi.mock("node:http", () => ({
   default: {
-    createServer: vi.fn((handler) => {
+    createServer: vi.fn((handler: MockHttpHandler) => {
       mockHttpServer.handler = handler;
       return mockHttpServer;
     }),
@@ -228,7 +239,7 @@ describe("Feature 10: Interactive Login", () => {
       vi.stubGlobal("fetch", mockFetch);
 
       const originalListen = mockHttpServer.listen;
-      mockHttpServer.listen = vi.fn((_port, cb) => {
+      mockHttpServer.listen = vi.fn((_port: number, cb?: () => void) => {
         if (cb) cb();
         if (mockHttpServer.handler) {
           const mockReq = {
