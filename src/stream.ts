@@ -29,6 +29,7 @@ import {
   exponentialBackoff,
   firstTokenTimeoutForModel,
   isCapacityError,
+  isMalformedRequestBodyError,
   isNonRetryableBodyError,
   isTooBigError,
   MAX_RETRY_DELAY,
@@ -46,9 +47,12 @@ import {
   type KiroImage,
   type KiroToolResult,
   type KiroToolSpec,
+  type KiroToolUse,
   type KiroUserInputMessage,
+  normalizeKiroToolUseId,
   normalizeMessages,
   sanitizeSurrogates,
+  safeParseArgs,
   TOOL_RESULT_LIMIT,
   truncate,
 } from "./transform.js";
@@ -281,7 +285,7 @@ export function streamKiro(
         if (firstMsg?.role === "assistant") {
           const am = firstMsg as AssistantMessage;
           let armContent = "";
-          const armToolUses: Array<{ name: string; toolUseId: string; input: Record<string, unknown> }> = [];
+          const armToolUses: KiroToolUse[] = [];
           if (Array.isArray(am.content))
             for (const b of am.content) {
               if (b.type === "text") armContent += (b as TextContent).text;
@@ -291,11 +295,8 @@ export function streamKiro(
                 const tc = b as ToolCall;
                 armToolUses.push({
                   name: tc.name,
-                  toolUseId: tc.id,
-                  input:
-                    typeof tc.arguments === "string"
-                      ? JSON.parse(tc.arguments)
-                      : (tc.arguments as Record<string, unknown>),
+                  toolUseId: normalizeKiroToolUseId(tc.id),
+                  input: safeParseArgs(tc.arguments),
                 });
               }
             }
@@ -323,7 +324,7 @@ export function streamKiro(
               currentToolResults.push({
                 content: formatToolResultContent(truncate(getContentText(m), toolResultLimit)),
                 status: trm.isError ? "error" : "success",
-                toolUseId: trm.toolCallId,
+                toolUseId: normalizeKiroToolUseId(trm.toolCallId),
               });
               if (Array.isArray(trm.content))
                 for (const c of trm.content) if (c.type === "image") toolResultImages.push(c as ImageContent);
@@ -342,7 +343,7 @@ export function streamKiro(
               currentToolResults.push({
                 content: formatToolResultContent(truncate(getContentText(m), toolResultLimit)),
                 status: trm.isError ? "error" : "success",
-                toolUseId: trm.toolCallId,
+                toolUseId: normalizeKiroToolUseId(trm.toolCallId),
               });
               if (Array.isArray(trm.content))
                 for (const c of trm.content) if (c.type === "image") toolResultImages2.push(c as ImageContent);
@@ -445,6 +446,7 @@ export function streamKiro(
         // Reset per outer iteration — each 403 retry gets a fresh capacity budget
         let capacityRetryCount = 0;
         // Inner loop: retry capacity errors without consuming outer retry budget
+        let retriedWithoutAdditionalFields = false;
         while (true) {
           debugLog("request.send", {
             attempt: retryCount,
@@ -493,6 +495,20 @@ export function streamKiro(
               logCapacityEvent(
                 `INSUFFICIENT_MODEL_CAPACITY — exhausted ${capacityRetryConfig.maxRetries} retries, giving up`,
               );
+            }
+            if (
+              request.additionalModelRequestFields &&
+              !retriedWithoutAdditionalFields &&
+              isMalformedRequestBodyError(response.status, errText)
+            ) {
+              retriedWithoutAdditionalFields = true;
+              debugLog("request.retry_without_additional_fields", {
+                status: response.status,
+                body: errText,
+                strippedFields: Object.keys(request.additionalModelRequestFields),
+              });
+              delete request.additionalModelRequestFields;
+              continue;
             }
             if (response.status === 403 && !isCapacityError(errText) && retryCount < maxRetries) {
               retryCount++;

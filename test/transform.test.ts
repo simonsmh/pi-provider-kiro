@@ -5,6 +5,8 @@ import {
   convertImagesToKiro,
   convertToolsToKiro,
   getContentText,
+  MAX_KIRO_TOOL_DESCRIPTION,
+  normalizeKiroToolUseId,
   normalizeMessages,
   sanitizeSurrogates,
   TOOL_RESULT_LIMIT,
@@ -119,6 +121,76 @@ describe("Feature 5: Message Transformation", () => {
       expect(r[0].toolSpecification.name).toBe("bash");
       expect(r[0].toolSpecification.inputSchema.json).toEqual(tools[0].parameters);
     });
+
+    it("strips Kiro-rejected schema keywords while preserving property names", () => {
+      const tools: Tool[] = [
+        {
+          name: "memories",
+          description: "Store note",
+          parameters: {
+            type: "object",
+            properties: {
+              filename: { type: "string", pattern: "^\\d+", minLength: 1, maxLength: 100 },
+              max_lines: { type: "integer", minimum: 1 },
+              options: {
+                type: "object",
+                additionalProperties: false,
+                required: [],
+                properties: {
+                  format: { type: "string" },
+                  pattern: { type: "string", format: "uuid" },
+                },
+              },
+              qa: {
+                oneOf: [
+                  { type: "object", properties: { url: { type: "string", format: "uri" } } },
+                  { type: "object", properties: { attached: { type: "boolean" } } },
+                ],
+              },
+            },
+            additionalProperties: false,
+          },
+        },
+      ];
+      const schema = convertToolsToKiro(tools)[0].toolSpecification.inputSchema.json;
+      expect(schema.additionalProperties).toBeUndefined();
+      expect((schema.properties as any).filename.pattern).toBeUndefined();
+      expect((schema.properties as any).filename.minLength).toBeUndefined();
+      expect((schema.properties as any).filename.maxLength).toBeUndefined();
+      expect((schema.properties as any).max_lines.minimum).toBeUndefined();
+      expect((schema.properties as any).options.additionalProperties).toBeUndefined();
+      expect((schema.properties as any).options.required).toBeUndefined();
+      expect((schema.properties as any).options.properties.format.type).toBe("string");
+      expect((schema.properties as any).options.properties.pattern.type).toBe("string");
+      expect((schema.properties as any).options.properties.pattern.format).toBeUndefined();
+      expect((schema.properties as any).qa.oneOf).toBeUndefined();
+    });
+
+    it("truncates tool descriptions to Kiro's limit", () => {
+      const r = convertToolsToKiro([
+        {
+          name: "long_tool",
+          description: "x".repeat(MAX_KIRO_TOOL_DESCRIPTION + 1),
+          parameters: { type: "object" },
+        },
+      ]);
+      expect(r[0].toolSpecification.description).toHaveLength(MAX_KIRO_TOOL_DESCRIPTION);
+    });
+  });
+
+  describe("normalizeKiroToolUseId", () => {
+    it("leaves valid short IDs unchanged", () => {
+      expect(normalizeKiroToolUseId("tc_1-ok")).toBe("tc_1-ok");
+    });
+
+    it("normalizes composite pi IDs to Bedrock-safe IDs", () => {
+      const id = normalizeKiroToolUseId(
+        "call_HGr8IhpZkrcuZqIHD6sY3qS4|fc_06465c246d9ce48d016a4a432632048191ad4422ec9711c7fb",
+      );
+      expect(id).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+      expect(id).not.toContain("|");
+      expect(id).toHaveLength(64);
+    });
   });
 
   describe("convertImagesToKiro", () => {
@@ -148,6 +220,21 @@ describe("Feature 5: Message Transformation", () => {
       const { history } = buildHistory(msgs, "M");
       const entry = history.find((h) => h.assistantResponseMessage?.toolUses);
       expect(entry?.assistantResponseMessage?.toolUses?.[0].name).toBe("bash");
+      expect(entry?.assistantResponseMessage?.toolUses?.[0].input).toEqual({ cmd: "ls" });
+    });
+
+    it("normalizes matching tool call and result IDs in history", () => {
+      const rawId = "call_HGr8IhpZkrcuZqIHD6sY3qS4|fc_06465c246d9ce48d016a4a432632048191ad4422ec9711c7fb";
+      const a = assistant("");
+      a.content = [{ type: "toolCall", id: rawId, name: "bash", arguments: {} }];
+      const msgs: Message[] = [user("go"), a, toolResult(rawId, "ok"), user("next")];
+      const { history } = buildHistory(msgs, "M");
+      const toolUseId = history.find((h) => h.assistantResponseMessage?.toolUses)?.assistantResponseMessage?.toolUses?.[0]
+        .toolUseId;
+      const toolResultId = history.find((h) => h.userInputMessage?.userInputMessageContext?.toolResults)
+        ?.userInputMessage?.userInputMessageContext?.toolResults?.[0].toolUseId;
+      expect(toolUseId).toBe(normalizeKiroToolUseId(rawId));
+      expect(toolResultId).toBe(toolUseId);
     });
 
     it("batches consecutive tool results", () => {

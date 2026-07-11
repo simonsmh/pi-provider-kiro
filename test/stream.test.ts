@@ -11,7 +11,7 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { capacityRetryConfig, retryConfig } from "../src/retry.js";
 import { resetProfileArnCache, streamKiro } from "../src/stream.js";
-import type { KiroHistoryEntry } from "../src/transform.js";
+import { normalizeKiroToolUseId, type KiroHistoryEntry } from "../src/transform.js";
 
 vi.mock("../src/models.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/models.js")>();
@@ -785,9 +785,10 @@ describe("Feature 9: Streaming Integration", () => {
   // =========================================================================
 
   it("handles full multi-turn: user -> assistant(toolCall) -> toolResult -> assistant(text)", async () => {
+    const rawToolId = "call_HGr8IhpZkrcuZqIHD6sY3qS4|fc_06465c246d9ce48d016a4a432632048191ad4422ec9711c7fb";
     const assistantWithTool: AssistantMessage = {
       role: "assistant",
-      content: [{ type: "toolCall", id: "tc1", name: "calc", arguments: { expr: "2+2" } }],
+      content: [{ type: "toolCall", id: rawToolId, name: "calc", arguments: { expr: "2+2" } }],
       api: "kiro-api",
       provider: "kiro",
       model: "claude-sonnet-4-5",
@@ -797,7 +798,7 @@ describe("Feature 9: Streaming Integration", () => {
     };
     const toolResult: ToolResultMessage = {
       role: "toolResult",
-      toolCallId: "tc1",
+      toolCallId: rawToolId,
       toolName: "calc",
       content: [{ type: "text", text: "4" }],
       isError: false,
@@ -822,7 +823,11 @@ describe("Feature 9: Streaming Integration", () => {
     const currentMsg = body.conversationState.currentMessage.userInputMessage;
     expect(currentMsg.content).toBe("");
     expect(currentMsg.userInputMessageContext?.toolResults).toHaveLength(1);
-    expect(currentMsg.userInputMessageContext.toolResults[0].toolUseId).toBe("tc1");
+    expect(currentMsg.userInputMessageContext.toolResults[0].toolUseId).toBe(normalizeKiroToolUseId(rawToolId));
+    expect(body.conversationState.history[1].assistantResponseMessage.toolUses[0].toolUseId).toBe(
+      normalizeKiroToolUseId(rawToolId),
+    );
+    expect(body.conversationState.history[1].assistantResponseMessage.toolUses[0].input).toEqual({ expr: "2+2" });
 
     vi.unstubAllGlobals();
   });
@@ -2400,6 +2405,45 @@ describe("Feature 9: Streaming Integration", () => {
         (h.userInputMessage && /^(Continue|\.)$/i.test(h.userInputMessage.content)),
     );
     expect(badPadding).toHaveLength(0);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("retries malformed 400 once without additional model request fields", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        text: async () =>
+          '{"__type":"com.amazon.kiro.runtimeservice#ValidationException","message":"Improperly formed request.","reason":"REQUEST_BODY_INVALID"}',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: vi
+              .fn()
+              .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode('{"content":"OK"}') })
+              .mockResolvedValueOnce({ done: true, value: undefined }),
+          }),
+        },
+      });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const stream = streamKiro(makeModel({ id: "claude-opus-4-8", reasoning: true }), makeContext(), {
+      apiKey: "tok",
+      reasoning: "high",
+    });
+    const events = await collect(stream);
+
+    expect(events.find((e) => e.type === "done")).toBeDefined();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(firstBody.additionalModelRequestFields).toBeDefined();
+    expect(secondBody.additionalModelRequestFields).toBeUndefined();
 
     vi.unstubAllGlobals();
   });
