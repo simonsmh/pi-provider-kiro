@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultModels, getCachedModels } from "../src/models.js";
+import { getKiroIdeCredentials, getKiroIdeCredentialsAllowExpired } from "../src/kiro-ide.js";
+import { defaultModels, getCachedModels, isCacheStale, updateKiroModelsCache } from "../src/models.js";
 
 // Mock models.js's getCachedModels helper to control cache contents
 vi.mock("../src/models.js", async (importOriginal) => {
@@ -8,12 +9,20 @@ vi.mock("../src/models.js", async (importOriginal) => {
   return {
     ...original,
     getCachedModels: vi.fn(),
+    isCacheStale: vi.fn(),
+    updateKiroModelsCache: vi.fn(),
   };
 });
 
+vi.mock("../src/kiro-ide.js", () => ({
+  getKiroIdeCredentials: vi.fn(),
+  getKiroIdeCredentialsAllowExpired: vi.fn(),
+}));
+
 const mockPi = () => {
   const registerProvider = vi.fn();
-  return { pi: { registerProvider, on: vi.fn() } as unknown as ExtensionAPI, registerProvider };
+  const on = vi.fn();
+  return { pi: { registerProvider, on } as unknown as ExtensionAPI, registerProvider, on };
 };
 
 describe("Feature 1: Extension Registration", () => {
@@ -36,6 +45,32 @@ describe("Feature 1: Extension Registration", () => {
     expect(registerProvider.mock.calls[0][0]).toBe("kiro");
   });
 
+  it("configures KIRO_API_KEY through pi's pre-session environment resolution", async () => {
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+
+    mod.default(pi);
+
+    expect(registerProvider.mock.calls[0][1].apiKey).toBe("$KIRO_API_KEY");
+  });
+
+  it("refreshes the catalog with an API key credential", async () => {
+    vi.mocked(isCacheStale).mockReturnValue(false);
+    vi.mocked(getCachedModels).mockReturnValue(defaultModels);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    const result = await config.refreshModels({
+      credential: { type: "api_key", key: "ksk_from_environment" },
+      allowNetwork: true,
+    });
+
+    expect(result).toEqual(defaultModels);
+    expect(updateKiroModelsCache).not.toHaveBeenCalled();
+  });
+
   it("registers models from cache", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
@@ -43,6 +78,161 @@ describe("Feature 1: Extension Registration", () => {
 
     const config = registerProvider.mock.calls[0][1];
     expect(Array.isArray(config.models)).toBe(true);
+  });
+
+  it("refreshes a stale credential-scoped catalog through ListAvailableModels", async () => {
+    const freshModels = [
+      {
+        id: "gpt-5-6-luna",
+        name: "gpt-5.6-luna",
+        api: "kiro-api" as const,
+        provider: "kiro" as const,
+        baseUrl: "https://runtime.us-east-1.kiro.dev/",
+        reasoning: false,
+        supportsEffort: false,
+        input: ["text", "image"] as const,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const,
+        contextWindow: 272000,
+        maxTokens: 128000,
+      },
+    ];
+    vi.mocked(isCacheStale).mockReturnValue(true);
+    vi.mocked(updateKiroModelsCache).mockResolvedValue("arn:aws:codewhisperer:us-east-1:123:profile/test");
+    vi.mocked(getCachedModels).mockReturnValue(freshModels);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    const result = await config.refreshModels({
+      credential: {
+        access: "token",
+        refresh: "refresh",
+        expires: Date.now() + 60_000,
+        clientId: "",
+        clientSecret: "",
+        region: "ap-northeast-1",
+        profileArn: "arn:aws:codewhisperer:us-east-1:123:profile/test",
+      },
+      allowNetwork: true,
+    });
+
+    expect(updateKiroModelsCache).toHaveBeenCalledWith(
+      "token",
+      "us-east-1",
+      "arn:aws:codewhisperer:us-east-1:123:profile/test",
+      undefined,
+    );
+    expect(result).toEqual(freshModels);
+  });
+
+  it("keeps the existing catalog if a legacy profile cannot refresh", async () => {
+    vi.mocked(isCacheStale).mockReturnValue(true);
+    vi.mocked(updateKiroModelsCache).mockResolvedValue("arn:aws:codewhisperer:us-east-1:123:profile/legacy");
+    vi.mocked(getCachedModels).mockReturnValue([]);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    const result = await config.refreshModels({
+      credential: {
+        access: "token",
+        refresh: "refresh",
+        expires: Date.now() + 60_000,
+        clientId: "",
+        clientSecret: "",
+        region: "us-east-1",
+        profileArn: "arn:aws:codewhisperer:us-east-1:123:profile/legacy",
+      },
+      allowNetwork: true,
+    });
+
+    expect(result).toEqual(defaultModels);
+  });
+
+  it("uses the matching enterprise IDE token to migrate a legacy Builder profile", async () => {
+    const freshModels = [
+      {
+        id: "gpt-5-6-luna",
+        name: "gpt-5.6-luna",
+        api: "kiro-api" as const,
+        provider: "kiro" as const,
+        baseUrl: "https://runtime.us-east-1.kiro.dev/",
+        reasoning: false,
+        supportsEffort: false,
+        input: ["text", "image"] as const,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const,
+        contextWindow: 272000,
+        maxTokens: 128000,
+      },
+    ];
+    vi.mocked(getKiroIdeCredentials).mockReturnValue({
+      access: "fresh-ide-access",
+      refresh: "shared-refresh|client|secret|idc",
+      expires: Date.now() + 60_000,
+      clientId: "client",
+      clientSecret: "secret",
+      region: "ap-northeast-1",
+      authMethod: "idc",
+      isEnterprise: true,
+    });
+    vi.mocked(isCacheStale).mockReturnValue(true);
+    vi.mocked(updateKiroModelsCache).mockResolvedValue("arn:aws:codewhisperer:us-east-1:123:profile/enterprise");
+    vi.mocked(getCachedModels).mockReturnValue(freshModels);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    const result = await config.refreshModels({
+      credential: {
+        access: "legacy-access",
+        refresh: "shared-refresh|legacy-client|legacy-secret|idc",
+        expires: Date.now() + 60_000,
+        clientId: "legacy-client",
+        clientSecret: "legacy-secret",
+        region: "ap-northeast-1",
+        profileArn: "arn:aws:codewhisperer:us-east-1:123:profile/AAAACCCCXXXX",
+      },
+      allowNetwork: true,
+    });
+
+    expect(updateKiroModelsCache).toHaveBeenCalledWith("fresh-ide-access", "us-east-1", undefined, undefined);
+    expect(result).toEqual(freshModels);
+  });
+
+  it("uses an unexpired IDE catalog credential without consulting its expired fallback", async () => {
+    vi.mocked(getKiroIdeCredentials).mockReturnValue({
+      access: "fresh-ide-access",
+      refresh: "shared-refresh|client|secret|idc",
+      expires: Date.now() + 60_000,
+      clientId: "client",
+      clientSecret: "secret",
+      region: "ap-northeast-1",
+      authMethod: "idc",
+      isEnterprise: true,
+    });
+    vi.mocked(isCacheStale).mockReturnValue(false);
+    vi.mocked(getCachedModels).mockReturnValue([]);
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    mod.default(pi);
+
+    const config = registerProvider.mock.calls[0][1];
+    await config.refreshModels({
+      credential: {
+        access: "legacy-access",
+        refresh: "shared-refresh|legacy-client|legacy-secret|idc",
+        expires: Date.now() + 60_000,
+        clientId: "legacy-client",
+        clientSecret: "legacy-secret",
+        region: "ap-northeast-1",
+      },
+      allowNetwork: true,
+    });
+
+    expect(getKiroIdeCredentialsAllowExpired).not.toHaveBeenCalled();
   });
 
   it("registers OAuth with name 'Kiro (Web Login)'", async () => {

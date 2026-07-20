@@ -61,12 +61,10 @@ function readKiroIdeToken(allowExpired: boolean): KiroCredentials | undefined {
       }
     }
 
-    const startUrl =
-      tokenData.region === "us-east-1" && tokenData.provider?.toLowerCase() === "enterprise"
-        ? undefined
-        : tokenData.region === "us-east-1"
-          ? "https://view.awsapps.com/start"
-          : undefined;
+    // The IDE stores `provider: Enterprise` but omits its IdC start URL. Keep
+    // that distinction so OAuth does not mistake the token for Builder ID.
+    const isEnterprise = tokenData.provider?.toLowerCase() === "enterprise";
+    const startUrl = !isEnterprise && region === "us-east-1" ? "https://view.awsapps.com/start" : undefined;
 
     return {
       // Pack into the same pipe-delimited format used by the rest of the refresh chain
@@ -79,6 +77,7 @@ function readKiroIdeToken(allowExpired: boolean): KiroCredentials | undefined {
       region,
       authMethod: "idc",
       startUrl,
+      ...(isEnterprise ? { isEnterprise: true } : {}),
     };
   } catch {
     return undefined;

@@ -1,11 +1,12 @@
 // Feature 2: Model Definitions
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { isApiKey, kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
 
 const CACHE_PATH = join(homedir(), ".pi", "agent", "kiro-models-cache.json");
+const CATALOG_VERSION = 2;
 
 function getCachedModelList(value: unknown): KiroModelDef[] | undefined {
   if (Array.isArray(value)) return value as KiroModelDef[];
@@ -20,6 +21,12 @@ function getCachedUpdatedAt(value: unknown): number | undefined {
   return typeof updatedAt === "number" ? updatedAt : undefined;
 }
 
+function getCachedCatalogVersion(value: unknown): number | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const version = (value as { catalogVersion?: unknown }).catalogVersion;
+  return typeof version === "number" ? version : undefined;
+}
+
 export const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
 export interface KiroModelDef {
@@ -30,51 +37,96 @@ export interface KiroModelDef {
   baseUrl: string;
   reasoning: boolean;
   supportsEffort: boolean;
-  thinkingLevelMap?: Record<string, string>;
+  defaultEffort?: string;
+  effortValues?: string[];
   input: ("text" | "image")[];
   cost: typeof ZERO_COST;
   contextWindow: number;
   maxTokens: number;
-  firstTokenTimeout?: number;
 }
 
-export function buildModelDef(
-  piId: string,
-  baseUrl: string,
-  hasThinkingSchema: boolean,
-  hasEffortSchema: boolean,
-): KiroModelDef {
-  const isClaude = piId.startsWith("claude");
-  const isOpus = piId.includes("opus");
-  // Older Claude models (no minor version or minor < 6) have a 200K window;
-  // newer ones (minor >= 6, e.g. claude-sonnet-4-6) have 1M.
-  const lastDash = piId.lastIndexOf("-");
-  const minorVer = isClaude && lastDash > 0 ? Number.parseInt(piId.slice(lastDash + 1), 10) : undefined;
-  const has1MContext = isClaude && Number.isFinite(minorVer) && (minorVer as number) >= 6;
-  const name =
-    piId === "auto"
-      ? "Auto"
-      : piId
-          .split("-")
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(" ");
+interface KiroAvailableModel {
+  modelId: string;
+  modelName?: string;
+  supportedInputTypes?: string[];
+  tokenLimits?: {
+    maxInputTokens?: number;
+    maxOutputTokens?: number;
+  };
+  additionalModelRequestFieldsSchema?: {
+    properties?: {
+      thinking?: unknown;
+      output_config?: {
+        properties?: {
+          effort?: {
+            enum?: unknown;
+            default?: unknown;
+          };
+        };
+      };
+    };
+  };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+export function buildModelDef(model: KiroAvailableModel, baseUrl: string): KiroModelDef | undefined {
+  const contextWindow = model.tokenLimits?.maxInputTokens;
+  const maxTokens = model.tokenLimits?.maxOutputTokens;
+  const input = [
+    ...new Set(
+      (model.supportedInputTypes ?? []).flatMap((inputType) => {
+        switch (inputType.toUpperCase()) {
+          case "TEXT":
+            return ["text" as const];
+          case "IMAGE":
+            return ["image" as const];
+          default:
+            return [];
+        }
+      }),
+    ),
+  ];
+
+  // Do not invent limits or capabilities: every model we expose must carry
+  // the complete catalog metadata needed by pi.
+  if (
+    !model.modelName ||
+    !isPositiveInteger(contextWindow) ||
+    !isPositiveInteger(maxTokens) ||
+    !input.includes("text")
+  ) {
+    return undefined;
+  }
+
+  const schemaProperties = model.additionalModelRequestFieldsSchema?.properties;
+  const hasThinkingSchema = !!schemaProperties?.thinking;
+  const effortSchema = schemaProperties?.output_config?.properties?.effort;
+  const effortValues = Array.isArray(effortSchema?.enum)
+    ? effortSchema.enum.filter((value): value is string => typeof value === "string")
+    : [];
+  const defaultEffort =
+    typeof effortSchema?.default === "string" && effortValues.includes(effortSchema.default)
+      ? effortSchema.default
+      : undefined;
+  const piId = model.modelId.replace(/(\d)\.(\d)/g, "$1-$2");
 
   return {
     id: piId,
-    name,
+    name: model.modelName,
     api: "kiro-api",
     provider: "kiro",
     baseUrl,
     reasoning: hasThinkingSchema,
-    supportsEffort: hasEffortSchema,
-    ...(isOpus && hasEffortSchema
-      ? { thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" } }
-      : {}),
-    input: isClaude || piId === "auto" ? ["text", "image"] : ["text"],
+    supportsEffort: effortValues.length > 0,
+    ...(defaultEffort ? { defaultEffort } : {}),
+    ...(effortValues.length > 0 ? { effortValues } : {}),
+    input,
     cost: ZERO_COST,
-    contextWindow: has1MContext || piId === "auto" ? 1000000 : 200000,
-    maxTokens: isOpus ? 128000 : isClaude || piId === "auto" ? 65536 : 8192,
-    ...(isOpus ? { firstTokenTimeout: 180_000 } : {}),
+    contextWindow,
+    maxTokens,
   };
 }
 
@@ -150,14 +202,11 @@ export function isCacheStale(region: string, profileArn?: string): boolean {
     const entry = data[key];
     if (!entry) return true;
 
-    let updatedAt = 0;
-    if (Array.isArray(entry)) {
-      // Old format: check file modification time
-      const stat = statSync(CACHE_PATH);
-      updatedAt = stat.mtimeMs;
-    } else {
-      updatedAt = getCachedUpdatedAt(entry) ?? 0;
-    }
+    // Catalog entries written before v2 contain guessed limits and must be
+    // refreshed before they are used as a source of model metadata.
+    if (Array.isArray(entry) || getCachedCatalogVersion(entry) !== CATALOG_VERSION) return true;
+
+    const updatedAt = getCachedUpdatedAt(entry) ?? 0;
 
     // Stale if older than 1 hour
     return Date.now() - updatedAt > 3600_000;
@@ -206,6 +255,7 @@ export async function updateKiroModelsCache(
   accessToken: string,
   region: string,
   profileArn?: string,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   // If no profileArn provided, try to discover it
   if (!profileArn) {
@@ -229,56 +279,22 @@ export async function updateKiroModelsCache(
         origin: "KIRO_CLI",
         ...(profileArn ? { profileArn } : {}),
       }),
+      signal,
     });
 
     if (!response.ok) {
       return profileArn;
     }
 
-    const data = (await response.json()) as {
-      models?: Array<{
-        modelId: string;
-        additionalModelRequestFieldsSchema?: {
-          properties?: {
-            thinking?: unknown;
-            output_config?: {
-              properties?: {
-                effort?: unknown;
-              };
-            };
-          };
-        };
-      }>;
-    };
+    const data = (await response.json()) as { models?: KiroAvailableModel[] };
     const fetchedModels = data.models || [];
     if (fetchedModels.length === 0) return profileArn;
 
-    const newModels = fetchedModels.map((fm) => {
-      const kiroId = fm.modelId;
-      const piId = kiroId.replace(/(\d)\.(\d)/g, "$1-$2");
-
-      const schemaProps = fm.additionalModelRequestFieldsSchema?.properties;
-      const hasThinkingSchema = !!schemaProps?.thinking;
-      const hasEffortSchema = !!schemaProps?.output_config?.properties?.effort;
-
-      return buildModelDef(piId, `https://runtime.${effectiveRegion}.kiro.dev/`, hasThinkingSchema, hasEffortSchema);
+    const newModels = fetchedModels.flatMap((model) => {
+      const modelDef = buildModelDef(model, `https://runtime.${effectiveRegion}.kiro.dev/`);
+      return modelDef ? [modelDef] : [];
     });
-
-    if (!newModels.some((m) => m.id === "auto")) {
-      newModels.push({
-        id: "auto",
-        name: "Auto",
-        api: "kiro-api" as const,
-        provider: "kiro" as const,
-        baseUrl: `https://runtime.${effectiveRegion}.kiro.dev/`,
-        reasoning: true,
-        supportsEffort: false,
-        input: ["text", "image"],
-        cost: ZERO_COST,
-        contextWindow: 1000000,
-        maxTokens: 65536,
-      });
-    }
+    if (newModels.length === 0) return profileArn;
 
     let cache: Record<string, unknown> = {};
     if (existsSync(CACHE_PATH)) {
@@ -293,6 +309,7 @@ export async function updateKiroModelsCache(
     // profileArn.split(':')[3] find the same entry we just wrote.
     const key = getCacheKey(effectiveRegion, profileArn);
     cache[key] = {
+      catalogVersion: CATALOG_VERSION,
       updatedAt: Date.now(),
       models: newModels,
     };

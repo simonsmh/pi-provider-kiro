@@ -378,6 +378,14 @@ export function streamKiro(
         }
         const baseModel = getCachedModels(region, profileArn).find((m) => m.id === model.id) ?? model;
         const supportsEffort = "supportsEffort" in baseModel && baseModel.supportsEffort === true;
+        const effortValues =
+          "effortValues" in baseModel && Array.isArray(baseModel.effortValues)
+            ? baseModel.effortValues.filter((value): value is string => typeof value === "string")
+            : [];
+        const defaultEffort =
+          "defaultEffort" in baseModel && typeof baseModel.defaultEffort === "string"
+            ? baseModel.defaultEffort
+            : undefined;
         const supportsThinking = baseModel.reasoning || supportsEffort;
         let additionalModelRequestFields: Record<string, unknown> | undefined;
         if (supportsThinking) {
@@ -389,7 +397,7 @@ export function streamKiro(
 
           if (supportsEffort && thinkingEnabled) {
             const rawReasoning = options?.reasoning;
-            let mappedEffort = "medium";
+            let mappedEffort = defaultEffort;
             if (typeof rawReasoning === "string") {
               const cleanReasoning = rawReasoning.trim().toLowerCase();
               // Base ladder: pi reasoning level -> Kiro effort, 1:1 for the
@@ -402,19 +410,15 @@ export function streamKiro(
                 xhigh: "xhigh",
                 max: "max",
               };
-              // Per-model override: models that support the extended effort
-              // tiers (e.g. Opus xhigh/max) remap pi's capped ladder upward so
-              // users can reach those tiers, since pi tops out at "high".
-              const levelMap = (baseModel?.thinkingLevelMap as Record<string, string> | undefined) ?? {};
-              if (levelMap[cleanReasoning]) {
-                mappedEffort = levelMap[cleanReasoning];
-              } else if (baseMap[cleanReasoning]) {
+              if (baseMap[cleanReasoning] && effortValues.includes(baseMap[cleanReasoning])) {
                 mappedEffort = baseMap[cleanReasoning];
               }
             }
-            additionalModelRequestFields.output_config = {
-              effort: mappedEffort,
-            };
+            if (mappedEffort) {
+              additionalModelRequestFields.output_config = {
+                effort: mappedEffort,
+              };
+            }
           }
         }
 

@@ -7,7 +7,6 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
-  statSync: vi.fn(),
 }));
 
 describe("Kiro Models Cache Scoping", () => {
@@ -26,6 +25,7 @@ describe("Kiro Models Cache Scoping", () => {
       vi.mocked(existsSync).mockReturnValue(true);
       const mockCache = {
         "us-east-1#profile-a": {
+          catalogVersion: 2,
           updatedAt: Date.now(),
           models: [{ id: "model-a" }],
         },
@@ -40,6 +40,7 @@ describe("Kiro Models Cache Scoping", () => {
       vi.mocked(existsSync).mockReturnValue(true);
       const mockCache = {
         "us-east-1": {
+          catalogVersion: 2,
           updatedAt: Date.now(),
           models: [{ id: "model-b" }],
         },
@@ -72,6 +73,7 @@ describe("Kiro Models Cache Scoping", () => {
       vi.mocked(existsSync).mockReturnValue(true);
       const mockCache = {
         "us-east-1#profile-a": {
+          catalogVersion: 2,
           updatedAt: Date.now() - 3601_000,
           models: [],
         },
@@ -84,6 +86,7 @@ describe("Kiro Models Cache Scoping", () => {
       vi.mocked(existsSync).mockReturnValue(true);
       const mockCache = {
         "us-east-1#profile-a": {
+          catalogVersion: 2,
           updatedAt: Date.now() - 1800_000,
           models: [],
         },
@@ -94,17 +97,17 @@ describe("Kiro Models Cache Scoping", () => {
   });
 
   describe("updateKiroModelsCache", () => {
-    it("saves models using getCacheKey", async () => {
+    it("stores catalog limits and input types using the profile cache key", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
             models: [
               {
-                modelId: "claude-sonnet-4.6",
-                additionalModelRequestFieldsSchema: {
-                  properties: { thinking: {} },
-                },
+                modelId: "gpt-5.6-luna",
+                modelName: "gpt-5.6-luna",
+                supportedInputTypes: ["TEXT", "IMAGE"],
+                tokenLimits: { maxInputTokens: 272000, maxOutputTokens: 128000 },
               },
             ],
           }),
@@ -122,8 +125,15 @@ describe("Kiro Models Cache Scoping", () => {
 
       expect(writtenData).toContain("us-east-1#profile-x");
       const parsed = JSON.parse(writtenData);
-      expect(parsed["us-east-1#profile-x"].models).toBeDefined();
-      expect(parsed["us-east-1#profile-x"].models[0].id).toBe("claude-sonnet-4-6");
+      const [model] = parsed["us-east-1#profile-x"].models;
+      expect(parsed["us-east-1#profile-x"].catalogVersion).toBe(2);
+      expect(model).toMatchObject({
+        id: "gpt-5-6-luna",
+        name: "gpt-5.6-luna",
+        input: ["text", "image"],
+        contextWindow: 272000,
+        maxTokens: 128000,
+      });
 
       vi.unstubAllGlobals();
     });
@@ -140,6 +150,9 @@ describe("Kiro Models Cache Scoping", () => {
             models: [
               {
                 modelId: "claude-sonnet-4.6",
+                modelName: "claude-sonnet-4.6",
+                supportedInputTypes: ["TEXT", "IMAGE"],
+                tokenLimits: { maxInputTokens: 1000000, maxOutputTokens: 64000 },
                 additionalModelRequestFieldsSchema: {
                   properties: { thinking: {} },
                 },

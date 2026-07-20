@@ -49,86 +49,61 @@ describe("Feature 2: Model Definitions", () => {
   });
 
   describe("buildModelDef", () => {
-    it("constructs standard Claude model definition", () => {
-      const m = buildModelDef("claude-sonnet-4-6", "https://example.com", true, true);
+    it("uses the catalog limits, name, and input types", () => {
+      const m = buildModelDef(
+        {
+          modelId: "gpt-5.6-luna",
+          modelName: "gpt-5.6-luna",
+          supportedInputTypes: ["TEXT", "IMAGE"],
+          tokenLimits: { maxInputTokens: 272000, maxOutputTokens: 128000 },
+        },
+        "https://example.com",
+      );
       expect(m).toEqual({
-        id: "claude-sonnet-4-6",
-        name: "Claude Sonnet 4 6",
+        id: "gpt-5-6-luna",
+        name: "gpt-5.6-luna",
         api: "kiro-api",
         provider: "kiro",
         baseUrl: "https://example.com",
-        reasoning: true,
-        supportsEffort: true,
-        input: ["text", "image"],
-        cost: ZERO_COST,
-        contextWindow: 1000000,
-        maxTokens: 65536,
-      });
-    });
-
-    it("constructs Opus model definition with thinkingLevelMap and timeout when effort is supported", () => {
-      const m = buildModelDef("claude-opus-4-7", "https://example.com", true, true);
-      expect(m).toEqual({
-        id: "claude-opus-4-7",
-        name: "Claude Opus 4 7",
-        api: "kiro-api",
-        provider: "kiro",
-        baseUrl: "https://example.com",
-        reasoning: true,
-        supportsEffort: true,
-        thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" },
-        input: ["text", "image"],
-        cost: ZERO_COST,
-        contextWindow: 1000000,
-        maxTokens: 128000,
-        firstTokenTimeout: 180000,
-      });
-    });
-
-    it("does not include thinkingLevelMap for Opus model when effort is not supported", () => {
-      const m = buildModelDef("claude-opus-4-7", "https://example.com", true, false);
-      expect(m.thinkingLevelMap).toBeUndefined();
-      expect(m.firstTokenTimeout).toBe(180000);
-    });
-
-    it("uses 200K context window for older Claude models without minor version", () => {
-      const m = buildModelDef("claude-sonnet-4", "https://example.com", true, false);
-      expect(m.contextWindow).toBe(200000);
-    });
-
-    it("uses 200K context window for older Claude models with minor version < 6", () => {
-      const m = buildModelDef("claude-sonnet-4-5", "https://example.com", true, false);
-      expect(m.contextWindow).toBe(200000);
-    });
-
-    it("uses 1M context window for newer Claude models with minor version >= 6", () => {
-      const m = buildModelDef("claude-sonnet-4-6", "https://example.com", true, false);
-      expect(m.contextWindow).toBe(1000000);
-    });
-
-    it("constructs standard non-Claude model definition", () => {
-      const m = buildModelDef("deepseek-3-2", "https://example.com", true, false);
-      expect(m).toEqual({
-        id: "deepseek-3-2",
-        name: "Deepseek 3 2",
-        api: "kiro-api",
-        provider: "kiro",
-        baseUrl: "https://example.com",
-        reasoning: true,
+        reasoning: false,
         supportsEffort: false,
-        input: ["text"],
+        input: ["text", "image"],
         cost: ZERO_COST,
-        contextWindow: 200000,
-        maxTokens: 8192,
+        contextWindow: 272000,
+        maxTokens: 128000,
       });
     });
 
-    it("constructs auto model definition", () => {
-      const m = buildModelDef("auto", "https://example.com", true, false);
-      expect(m.name).toBe("Auto");
-      expect(m.input).toEqual(["text", "image"]);
-      expect(m.contextWindow).toBe(1000000);
-      expect(m.maxTokens).toBe(65536);
+    it("maps thinking and effort support from the catalog schema", () => {
+      const m = buildModelDef(
+        {
+          modelId: "claude-opus-4.8",
+          modelName: "claude-opus-4.8",
+          supportedInputTypes: ["TEXT", "IMAGE"],
+          tokenLimits: { maxInputTokens: 1000000, maxOutputTokens: 128000 },
+          additionalModelRequestFieldsSchema: {
+            properties: {
+              thinking: {},
+              output_config: { properties: { effort: { enum: ["low", "medium", "high"], default: "high" } } },
+            },
+          },
+        },
+        "https://example.com",
+      );
+
+      expect(m?.reasoning).toBe(true);
+      expect(m?.supportsEffort).toBe(true);
+      expect(m?.defaultEffort).toBe("high");
+      expect(m?.effortValues).toEqual(["low", "medium", "high"]);
+    });
+
+    it("does not expose a model when catalog metadata is incomplete", () => {
+      expect(
+        buildModelDef(
+          { modelId: "unknown", modelName: "unknown", supportedInputTypes: ["TEXT"] },
+          "https://example.com",
+        ),
+      ).toBeUndefined();
     });
   });
 

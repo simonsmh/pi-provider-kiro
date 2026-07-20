@@ -28,7 +28,8 @@ vi.mock("../src/models.js", async (importOriginal) => {
         baseUrl: "https://runtime.us-east-1.kiro.dev/",
         reasoning: true,
         supportsEffort: true,
-        thinkingLevelMap: { minimal: "low", low: "medium", medium: "high", high: "xhigh" },
+        defaultEffort: "high",
+        effortValues: ["low", "medium", "high", "xhigh", "max"],
         input: ["text" as const],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 1000000,
@@ -2451,22 +2452,21 @@ describe("Feature 9: Streaming Integration", () => {
     vi.unstubAllGlobals();
   });
 
-  it("maps thinking levels and effort correctly in GenerateAssistantResponse request body", async () => {
+  it("uses catalog effort values without model-name-specific remapping", async () => {
     const mockFetch = mockFetchOk('{"content":"Done."}');
     vi.stubGlobal("fetch", mockFetch);
 
-    // The mocked cached model is Opus, which carries a thinkingLevelMap that
-    // remaps pi's ladder up one tier (skipping max for safety).
+    // The catalog provides both its default and the supported effort values.
     const cases = [
       { input: "minimal", expectedEffort: "low", expectedThinkingType: "adaptive" },
-      { input: "low", expectedEffort: "medium", expectedThinkingType: "adaptive" },
-      { input: "medium", expectedEffort: "high", expectedThinkingType: "adaptive" },
-      { input: "high", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
+      { input: "low", expectedEffort: "low", expectedThinkingType: "adaptive" },
+      { input: "medium", expectedEffort: "medium", expectedThinkingType: "adaptive" },
+      { input: "high", expectedEffort: "high", expectedThinkingType: "adaptive" },
       { input: "xhigh", expectedEffort: "xhigh", expectedThinkingType: "adaptive" },
       { input: "max", expectedEffort: "max", expectedThinkingType: "adaptive" },
       { input: "off", expectedEffort: undefined, expectedThinkingType: "disabled" },
       { input: false, expectedEffort: undefined, expectedThinkingType: "disabled" },
-      { input: undefined, expectedEffort: "medium", expectedThinkingType: "adaptive" },
+      { input: undefined, expectedEffort: "high", expectedThinkingType: "adaptive" },
     ];
 
     for (const c of cases) {
@@ -2490,18 +2490,17 @@ describe("Feature 9: Streaming Integration", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses 1:1 base effort mapping for models without a thinkingLevelMap", async () => {
+  it("omits effort when a model does not provide catalog effort metadata", async () => {
     const mockFetch = mockFetchOk('{"content":"Done."}');
     vi.stubGlobal("fetch", mockFetch);
 
-    // Non-Opus model: not present in the mocked cache, so baseModel falls back
-    // to the passed model (no thinkingLevelMap) -> base ladder applies as-is.
+    // This model is not present in the catalog cache, so no effort is guessed.
     const cases = [
       { input: "off", expectedEffort: undefined, expectedThinkingType: "disabled" },
-      { input: "minimal", expectedEffort: "low", expectedThinkingType: "adaptive" },
-      { input: "low", expectedEffort: "low", expectedThinkingType: "adaptive" },
-      { input: "medium", expectedEffort: "medium", expectedThinkingType: "adaptive" },
-      { input: "high", expectedEffort: "high", expectedThinkingType: "adaptive" },
+      { input: "minimal", expectedEffort: undefined, expectedThinkingType: "adaptive" },
+      { input: "low", expectedEffort: undefined, expectedThinkingType: "adaptive" },
+      { input: "medium", expectedEffort: undefined, expectedThinkingType: "adaptive" },
+      { input: "high", expectedEffort: undefined, expectedThinkingType: "adaptive" },
     ];
 
     for (const c of cases) {

@@ -100,6 +100,8 @@ export interface KiroCredentials extends OAuthCredentials {
   /** Required for Google/GitHub social profiles; ListAvailableProfiles may return empty for these tokens. */
   profileArn?: string;
   startUrl?: string;
+  /** Kiro IDE marks enterprise IdC tokens without persisting their start URL. */
+  isEnterprise?: boolean;
 }
 
 /** Kiro API keys are bearer tokens prefixed with `ksk_`. */
@@ -114,13 +116,17 @@ export function isApiKey(token: string | undefined): boolean {
  * start URL — kiro-cli stores `start_url: null` for them, and our own login
  * flow tags them with the well-known Builder ID start URL. A real IAM
  * Identity Center org token always carries a custom company start URL, so the
- * absence of a start URL (or an exact match on the Builder ID URL) identifies
- * Builder ID. Social (Google/GitHub) logins use `authMethod: "desktop"` and
- * are excluded here.
+ * absence of a start URL (or an exact match on the Builder ID URL) usually
+ * identifies Builder ID. The Kiro IDE is an exception: its enterprise tokens
+ * omit the start URL but explicitly identify their provider as Enterprise.
+ * Social (Google/GitHub) logins use `authMethod: "desktop"` and are excluded
+ * here.
  */
-export function isBuilderIdCredential(creds: Pick<KiroCredentials, "authMethod" | "startUrl"> | undefined): boolean {
+export function isBuilderIdCredential(
+  creds: Pick<KiroCredentials, "authMethod" | "startUrl" | "isEnterprise"> | undefined,
+): boolean {
   if (!creds || creds.authMethod !== "idc") return false;
-  return !creds.startUrl || creds.startUrl === BUILDER_ID_START_URL;
+  return !creds.isEnterprise && (!creds.startUrl || creds.startUrl === BUILDER_ID_START_URL);
 }
 
 /**
@@ -545,5 +551,6 @@ async function refreshKiroTokenDirect(credentials: OAuthCredentials): Promise<OA
     authMethod: "idc" as KiroAuthMethod,
     profileArn: (credentials as KiroCredentials).profileArn,
     startUrl: (credentials as KiroCredentials).startUrl,
+    isEnterprise: (credentials as KiroCredentials).isEnterprise,
   };
 }

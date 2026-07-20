@@ -35,6 +35,10 @@ describe("Feature 3: OAuth — Token Refresh", () => {
       expect(isBuilderIdCredential({ ...base, authMethod: "idc" } as KiroCredentials)).toBe(true);
     });
 
+    it("is false for an enterprise IDE token that omits its start URL", () => {
+      expect(isBuilderIdCredential({ ...base, authMethod: "idc", isEnterprise: true } as KiroCredentials)).toBe(false);
+    });
+
     it("is true for an idc token tagged with the Builder ID start URL", () => {
       expect(
         isBuilderIdCredential({ ...base, authMethod: "idc", startUrl: BUILDER_ID_START_URL } as KiroCredentials),
