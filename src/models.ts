@@ -493,8 +493,16 @@ export function isCacheStale(region: string): boolean {
   return !entry || Date.now() - entry.fetchedAt > CACHE_MAX_AGE_MS;
 }
 
-export async function updateKiroModelsCache(accessToken: string, region: string, profileArn?: string): Promise<void> {
-  const response = await fetchKiroModelCatalog({ accessToken, region }, profileArn);
+export async function updateKiroModelsCache(accessToken: string, region: string, profileArn?: string): Promise<string | undefined> {
+  const { resolveKiroProfileArn } = await import("./management.js");
+  let resolvedArn: string | undefined = profileArn;
+  try {
+    resolvedArn = await resolveKiroProfileArn({ accessToken, region }, profileArn);
+  } catch {
+    // Best-effort profile discovery
+  }
+
+  const response = await fetchKiroModelCatalog({ accessToken, region }, resolvedArn);
   const models = mapKiroCatalogModels(response.models, region);
   const existingCache = readManagementCache();
   const cache: ManagementModelsCache = existingCache ?? {
@@ -506,6 +514,7 @@ export async function updateKiroModelsCache(accessToken: string, region: string,
   cache.regions[region] = { region, fetchedAt: Date.now(), models };
   writeManagementCache(cache);
   refreshKnownModelIds(cache);
+  return resolvedArn;
 }
 
 export function resolveKiroModel(modelId: string, exactKiroModelId?: string): string {
