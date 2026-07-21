@@ -1,5 +1,6 @@
 // Feature 5: Message Transformation
 
+import { createHash } from "node:crypto";
 import type {
   AssistantMessage,
   ImageContent,
@@ -21,7 +22,7 @@ export interface KiroToolUse {
   input: Record<string, unknown>;
 }
 export interface KiroToolResult {
-  content: Array<{ text: string }>;
+  content: Array<{ text?: string; json?: unknown }>;
   status: "success" | "error";
   toolUseId: string;
 }
@@ -45,6 +46,8 @@ export interface KiroHistoryEntry {
 }
 
 export const TOOL_RESULT_LIMIT = 250000;
+export const MAX_KIRO_TOOL_DESCRIPTION = 1024;
+export const MAX_KIRO_TOOL_USE_ID = 64;
 
 export function sanitizeSurrogates(text: string): string {
   // Replace unpaired high surrogates (0xD800-0xDBFF not followed by low surrogate)
@@ -57,6 +60,40 @@ export function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;
   const half = Math.floor(limit / 2);
   return `${text.substring(0, half)}\n... [TRUNCATED] ...\n${text.substring(text.length - half)}`;
+}
+
+export function safeParseArgs(args: unknown): Record<string, unknown> {
+  if (!args) return {};
+  if (typeof args === "object" && !Array.isArray(args)) return args as Record<string, unknown>;
+  if (typeof args === "string") {
+    try {
+      const parsed = JSON.parse(args || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+export function normalizeKiroToolUseId(id: string): string {
+  if (/^[A-Za-z0-9_-]{1,64}$/.test(id)) return id;
+  const hash = createHash("sha256").update(id).digest("hex").slice(0, 16);
+  const safe = id.replace(/[^A-Za-z0-9_-]/g, "_").replace(/^_+|_+$/g, "") || "tool";
+  return `${safe.slice(0, MAX_KIRO_TOOL_USE_ID - hash.length - 1)}_${hash}`;
+}
+
+export function formatToolResultContent(text: string): Array<{ text?: string; json?: unknown }> {
+  const trimmed = text.trim();
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return [{ json: parsed }];
+    } catch {
+      // ignore JSON parse error, fallback to text
+    }
+  }
+  return [{ text }];
 }
 
 export function normalizeMessages(messages: Message[]): Message[] {
@@ -88,12 +125,75 @@ export function getContentText(msg: Message): string {
   return "";
 }
 
+const KIRO_REJECTED_SCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "pattern",
+  "format",
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "multipleOf",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "minProperties",
+  "maxProperties",
+  "contentEncoding",
+  "contentMediaType",
+  "$schema",
+  "patternProperties",
+  "propertyNames",
+  "dependentSchemas",
+  "dependentRequired",
+  "if",
+  "then",
+  "else",
+  "contains",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "oneOf",
+  "anyOf",
+  "allOf",
+  "$ref",
+]);
+
+const SCHEMA_MAP_KEYS = new Set(["properties", "$defs", "definitions"]);
+
+function sanitizeSchemaMap(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return sanitizeKiroSchema(value);
+  const out: Record<string, unknown> = {};
+  for (const [name, child] of Object.entries(value as Record<string, unknown>)) {
+    out[name] = sanitizeKiroSchema(child);
+  }
+  return out;
+}
+
+function sanitizeKiroSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeKiroSchema);
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (KIRO_REJECTED_SCHEMA_KEYS.has(key)) continue;
+    if (key === "required" && Array.isArray(child) && child.length === 0) continue;
+    out[key] = SCHEMA_MAP_KEYS.has(key) ? sanitizeSchemaMap(child) : sanitizeKiroSchema(child);
+  }
+  return out;
+}
+
+function ensureRootObjectType(schema: unknown): Record<string, unknown> {
+  const obj = schema && typeof schema === "object" && !Array.isArray(schema) ? (schema as Record<string, unknown>) : {};
+  return obj.type === "object" ? obj : { ...obj, type: "object" };
+}
+
 export function convertToolsToKiro(tools: Tool[]): KiroToolSpec[] {
   return tools.map((tool) => ({
     toolSpecification: {
       name: tool.name,
-      description: tool.description,
-      inputSchema: { json: tool.parameters as Record<string, unknown> },
+      description: tool.description.slice(0, MAX_KIRO_TOOL_DESCRIPTION),
+      inputSchema: { json: ensureRootObjectType(sanitizeKiroSchema(tool.parameters)) },
     },
   }));
 }
@@ -156,8 +256,8 @@ export function buildHistory(
             const tc = block as ToolCall;
             armToolUses.push({
               name: tc.name,
-              toolUseId: tc.id,
-              input: typeof tc.arguments === "string" ? JSON.parse(tc.arguments) : tc.arguments,
+              toolUseId: normalizeKiroToolUseId(tc.id),
+              input: safeParseArgs(tc.arguments),
             });
           }
         }
@@ -170,9 +270,9 @@ export function buildHistory(
       const trMsg = msg as ToolResultMessage;
       const toolResults: KiroToolResult[] = [
         {
-          content: [{ text: truncate(getContentText(msg), toolResultLimit) }],
+          content: formatToolResultContent(truncate(getContentText(msg), toolResultLimit)),
           status: trMsg.isError ? "error" : "success",
-          toolUseId: trMsg.toolCallId,
+          toolUseId: normalizeKiroToolUseId(trMsg.toolCallId),
         },
       ];
       const trImages: ImageContent[] = [];
@@ -182,9 +282,9 @@ export function buildHistory(
       while (j < historyMessages.length && historyMessages[j].role === "toolResult") {
         const next = historyMessages[j] as ToolResultMessage;
         toolResults.push({
-          content: [{ text: truncate(getContentText(next), toolResultLimit) }],
+          content: formatToolResultContent(truncate(getContentText(next), toolResultLimit)),
           status: next.isError ? "error" : "success",
-          toolUseId: next.toolCallId,
+          toolUseId: normalizeKiroToolUseId(next.toolCallId),
         });
         if (Array.isArray(next.content))
           for (const c of next.content) if (c.type === "image") trImages.push(c as ImageContent);
@@ -194,8 +294,6 @@ export function buildHistory(
       const lastEntryForTr = history[history.length - 1];
       const prevTr = lastEntryForTr?.userInputMessage;
       if (prevTr) {
-        // Merge tool results into previous user message to maintain alternation without synthetic padding
-        prevTr.content += "\n\nTool results provided.";
         if (trImages.length > 0) prevTr.images = [...(prevTr.images || []), ...convertImagesToKiro(trImages)];
         if (!prevTr.userInputMessageContext) prevTr.userInputMessageContext = {};
         prevTr.userInputMessageContext.toolResults = [
@@ -205,7 +303,7 @@ export function buildHistory(
       } else {
         history.push({
           userInputMessage: {
-            content: "Tool results provided.",
+            content: "",
             modelId,
             origin: "KIRO_CLI",
             ...(trImages.length > 0 ? { images: convertImagesToKiro(trImages) } : {}),
