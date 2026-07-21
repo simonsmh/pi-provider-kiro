@@ -154,7 +154,7 @@ async function loginKiroInternal(
   callbacks: OAuthLoginCallbacks,
   preferredMethod: KiroLoginMethod = "auto",
 ): Promise<OAuthCredentials> {
-  const { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, saveKiroCliCredentials, getKiroCliSocialToken } =
+  const { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, getKiroCliSocialToken } =
     await import("./kiro-cli.js");
 
   // If user explicitly wants social login, delegate to kiro-cli
@@ -162,67 +162,22 @@ async function loginKiroInternal(
     return loginViaKiroCli(callbacks, preferredMethod);
   }
 
-  // 1. Kiro IDE token (~/.aws/sso/cache/kiro-auth-token.json)
-  //    Checked first because the IDE keeps it continuously fresh and it already
-  //    covers IAM Identity Center logins — no extra prompts needed.
   const ideCreds = getKiroIdeCredentials();
-  if (ideCreds && (preferredMethod === "auto" || preferredMethod === "builder-id")) {
-    (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
-      "Using existing Kiro IDE credentials",
-    );
-    return ideCreds;
-  }
-
-  // 2. kiro-cli DB credentials (social / Builder ID / IdC)
-  let cliCreds = getKiroCliSocialToken();
-  if (!cliCreds) {
-    cliCreds = getKiroCliCredentials();
-  }
-
-  if (cliCreds && (preferredMethod === "auto" || cliCreds.authMethod === "idc")) {
-    (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
-      cliCreds.authMethod === "desktop"
-        ? "Using existing kiro-cli social credentials"
-        : "Using existing kiro-cli credentials",
-    );
-    return cliCreds;
-  }
-
-  // 3. Expired IDE token — attempt a silent AWS OIDC refresh
+  const cliCreds = getKiroCliSocialToken() || getKiroCliCredentials();
   const expiredIdeCreds = getKiroIdeCredentialsAllowExpired();
-  if (expiredIdeCreds) {
-    try {
-      (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
-        "Refreshing Kiro IDE credentials...",
-      );
-      return await refreshKiroTokenDirect(expiredIdeCreds);
-    } catch {
-      // Fall through to kiro-cli refresh
-    }
-  }
-
-  // 4. Expired kiro-cli credentials — attempt a silent refresh
   const expiredCreds = getKiroCliCredentialsAllowExpired();
-  if (expiredCreds) {
-    try {
-      (callbacks as unknown as { onProgress?: (msg: string) => void }).onProgress?.(
-        "Refreshing expired kiro-cli credentials...",
-      );
-      const refreshed = await refreshKiroTokenDirect(expiredCreds);
-      saveKiroCliCredentials(refreshed as KiroCredentials);
-      return refreshed;
-    } catch {
-      // Refresh failed, fall through to device code flow
-    }
+
+  const hasCached = Boolean(ideCreds || cliCreds || expiredIdeCreds || expiredCreds);
+
+  const { interactiveLogin } = await import("./login.js");
+  const result = await interactiveLogin(callbacks, hasCached);
+
+  if (result !== "use-cached-credentials") {
+    return result;
   }
 
-  // Fall back to interactive login (Feature 10)
-  const hasCached = Boolean(ideCreds || cliCreds || expiredIdeCreds || expiredCreds);
-  const choice = await interactiveLogin(callbacks, hasCached);
-  if (choice === "use-cached-credentials") {
-    return useCachedCascade(callbacks);
-  }
-  return choice;
+  // User chose to use cached credentials from the TUI menu
+  return useCachedCascade(callbacks);
 }
 
 async function useCachedCascade(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
