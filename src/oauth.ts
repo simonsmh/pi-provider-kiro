@@ -56,7 +56,13 @@ export function kiroUserAgent(service: string, sdkVersion: string): Record<strin
 }
 
 export function kiroAuthHeaders(token: string): Record<string, string> {
-  return { authorization: `Bearer ${token}` };
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  if (isApiKey(token)) {
+    headers.tokentype = "API_KEY";
+  }
+  return headers;
 }
 
 export function isApiKey(token: string): boolean {
