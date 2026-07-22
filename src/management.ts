@@ -4,10 +4,11 @@
 import { createHash } from "node:crypto";
 import { redactSensitiveText } from "./debug.js";
 import { getKiroEndpoints } from "./endpoints.js";
-import { kiroAuthHeaders } from "./oauth.js";
+import { kiroAuthHeaders, kiroUserAgent } from "./oauth.js";
 
 const LIST_PROFILES_PATH = "List-Available-Profiles";
 const LIST_MODELS_PATH = "List-Available-Models";
+const GET_PROFILE_TARGET = "AmazonCodeWhispererService.GetProfile";
 
 export interface KiroManagementAuth {
   accessToken: string;
@@ -39,6 +40,10 @@ export interface KiroGetUsageLimitsRequest {
 
 interface KiroListAvailableProfilesResponse {
   profiles?: Array<{ arn?: string; [key: string]: unknown }>;
+}
+
+interface KiroGetProfileResponse {
+  profile?: { arn?: string; [key: string]: unknown };
 }
 
 const profileArnCache = new Map<string, string>();
@@ -93,6 +98,10 @@ function profileCacheKey(auth: KiroManagementAuth): string {
   return `${auth.region}:${tokenHash}`;
 }
 
+function isKiroApiKey(accessToken: string): boolean {
+  return accessToken.startsWith("ksk_");
+}
+
 async function parseManagementResponse<TResponse>(
   response: Response,
   operation: string,
@@ -123,6 +132,32 @@ export function invalidateKiroProfileArn(auth: KiroManagementAuth): void {
   pendingProfileRequests.delete(key);
 }
 
+async function resolveKiroApiKeyProfileArn(auth: KiroManagementAuth): Promise<string> {
+  const url = getKiroEndpoints(auth.region).management;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-amz-json-1.0",
+        "X-Amz-Target": GET_PROFILE_TARGET,
+        ...kiroAuthHeaders(auth.accessToken),
+        ...kiroUserAgent("codewhispererruntime", "F,C"),
+      },
+      body: "{}",
+    });
+  } catch (error) {
+    throw new Error(`Kiro management GetProfile request failed in ${auth.region}`, { cause: error });
+  }
+
+  const responseBody = await parseManagementResponse<KiroGetProfileResponse>(response, "GetProfile", auth.region);
+  const profileArn = responseBody.profile?.arn;
+  if (!profileArn) {
+    throw new Error(`Kiro management GetProfile returned no profile in ${auth.region}`);
+  }
+  return profileArn;
+}
+
 export async function resolveKiroProfileArn(auth: KiroManagementAuth, providedArn?: string): Promise<string> {
   if (providedArn) return providedArn;
 
@@ -134,6 +169,12 @@ export async function resolveKiroProfileArn(auth: KiroManagementAuth, providedAr
   if (pending) return pending;
 
   const request = (async () => {
+    if (isKiroApiKey(auth.accessToken)) {
+      const arn = await resolveKiroApiKeyProfileArn(auth);
+      profileArnCache.set(key, arn);
+      return arn;
+    }
+
     const response = await requestManagement<KiroListAvailableProfilesResponse>(
       auth,
       "ListAvailableProfiles",

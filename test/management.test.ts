@@ -34,6 +34,25 @@ describe("Kiro management control plane", () => {
     expect(JSON.parse(request.body)).toEqual({});
   });
 
+  it("resolves an API key profile with GetProfile", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ profile: { arn: profileArn } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(resolveKiroProfileArn({ accessToken: "ksk_test_key", region: "us-east-1" })).resolves.toBe(profileArn);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, request] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://management.us-east-1.kiro.dev/");
+    expect(request.method).toBe("POST");
+    expect(request.headers["Content-Type"]).toBe("application/x-amz-json-1.0");
+    expect(request.headers["X-Amz-Target"]).toBe("AmazonCodeWhispererService.GetProfile");
+    expect(request.headers.tokentype).toBe("API_KEY");
+    expect(JSON.parse(request.body)).toEqual({});
+  });
+
   it("returns the current catalog shape, including Fable metadata", async () => {
     const fable = {
       modelId: "claude-fable-5",
