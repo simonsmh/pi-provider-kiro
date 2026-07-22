@@ -26,36 +26,40 @@ interface KiroModelRefreshContext {
 }
 
 async function refreshKiroModels(context: KiroModelRefreshContext): Promise<Model<Api>[]> {
-  const credential = context.credential;
-  if (!credential) return kiroModels;
-  if (credential.type === "api_key") {
-    const apiKey = (credential as { type: "api_key"; key: string }).key;
-    const apiRegion = "us-east-1";
-    if (context.allowNetwork && (context.force || isCacheStale(apiRegion))) {
-      try {
-        await updateKiroModelsCache(apiKey, apiRegion);
-      } catch {
-        // Fallback to cached
+  let credential = context.credential;
+
+  // Auto-resolve credentials if not explicitly passed in context
+  if (!credential) {
+    if (process.env.KIRO_API_KEY) {
+      credential = { type: "api_key", key: process.env.KIRO_API_KEY };
+    } else {
+      const { getKiroCliCredentials, getKiroCliSocialToken } = await import("./kiro-cli.js");
+      const { getKiroIdeCredentials } = await import("./kiro-ide.js");
+      const cliCreds = getKiroCliSocialToken() || getKiroCliCredentials() || getKiroIdeCredentials();
+      if (cliCreds?.access) {
+        credential = cliCreds;
       }
     }
-    if (context.signal?.aborted) return [];
-    const cachedModels = getCachedModels(apiRegion);
-    return cachedModels.length > 0 ? cachedModels : kiroModels;
   }
 
-  const storedCredentials = credential as KiroCredentials;
-  if (!storedCredentials.access) return kiroModels;
+  const apiRegion =
+    credential && "region" in credential && typeof credential.region === "string"
+      ? resolveApiRegion(credential.region)
+      : "us-east-1";
 
-  const apiRegion = resolveApiRegion(storedCredentials.region);
-  const profileArn = storedCredentials.profileArn;
-
-  if (context.allowNetwork && (context.force || isCacheStale(apiRegion))) {
+  if (credential && context.allowNetwork && (context.force || isCacheStale(apiRegion))) {
     try {
-      await updateKiroModelsCache(storedCredentials.access, apiRegion, profileArn);
+      if ("type" in credential && credential.type === "api_key" && typeof (credential as { key?: string }).key === "string") {
+        await updateKiroModelsCache((credential as { key: string }).key, apiRegion);
+      } else if ("access" in credential && typeof (credential as { access?: string }).access === "string" && (credential as { access: string }).access) {
+        const credObj = credential as { access: string; profileArn?: string };
+        await updateKiroModelsCache(credObj.access, apiRegion, credObj.profileArn);
+      }
     } catch {
       // Fallback to cached
     }
   }
+
   if (context.signal?.aborted) return [];
 
   const cachedModels = getCachedModels(apiRegion);
@@ -71,7 +75,7 @@ export default function (pi: ExtensionAPI) {
     baseUrl: getKiroEndpoints("us-east-1").runtime,
     api: "kiro-api",
     apiKey: "$KIRO_API_KEY",
-    models: kiroModels,
+    models: getCachedModels("us-east-1"),
     refreshModels: refreshKiroModels,
     oauth: {
       // Name reflects all supported auth methods: AWS Builder ID, Google, GitHub
