@@ -66,16 +66,17 @@ async function refreshKiroModels(context: KiroModelRefreshContext): Promise<Mode
   return cachedModels.length > 0 ? cachedModels : kiroModels;
 }
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
   // Capture ctx for the custom TUI login component
   pi.on("session_start", async (_event, ctx) => {
     setExtensionContext(ctx);
   });
+  const initialModels = await refreshKiroModels({ allowNetwork: true });
   pi.registerProvider("kiro", {
     baseUrl: getKiroEndpoints("us-east-1").runtime,
     api: "kiro-api",
     apiKey: "$KIRO_API_KEY",
-    models: getCachedModels("us-east-1"),
+    models: initialModels.length > 0 ? initialModels : getCachedModels("us-east-1"),
     refreshModels: refreshKiroModels,
     oauth: {
       // Name reflects all supported auth methods: AWS Builder ID, Google, GitHub
