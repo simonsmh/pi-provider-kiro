@@ -19,7 +19,6 @@ export const LEGACY_HOME_CACHE_PATH = join(homedir(), ".kiro-management-models-c
 const CACHE_MAX_AGE_MS = 3600_000;
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const DEFAULT_MAX_TOKENS = 8_192;
-const BASE_URL = getKiroEndpoints("us-east-1").runtime;
 const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 const REASONING_FAMILY_MARKERS = ["opus", "sonnet", "fable", "coder", "deepseek", "gpt", "glm", "qwen"];
 
@@ -296,7 +295,11 @@ export function isCacheStale(region: string): boolean {
   return !entry || Date.now() - entry.fetchedAt > CACHE_MAX_AGE_MS;
 }
 
-export async function updateKiroModelsCache(accessToken: string, region: string, profileArn?: string): Promise<string | undefined> {
+export async function updateKiroModelsCache(
+  accessToken: string,
+  region: string,
+  profileArn?: string,
+): Promise<string | undefined> {
   const { resolveKiroProfileArn } = await import("./management.js");
   let resolvedArn: string | undefined = profileArn;
   try {

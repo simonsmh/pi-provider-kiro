@@ -11,7 +11,7 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-a
 import { formatSafeError } from "./debug.js";
 import { resolveApiRegion } from "./endpoints.js";
 import { getKiroIdeCredentials, getKiroIdeCredentialsAllowExpired } from "./kiro-ide.js";
-import { interactiveLogin, loginViaKiroCli } from "./login.js";
+import { loginViaKiroCli } from "./login.js";
 
 export const SSO_OIDC_ENDPOINT = "https://oidc.us-east-1.amazonaws.com";
 export const BUILDER_ID_START_URL = "https://view.awsapps.com/start";
@@ -154,8 +154,9 @@ async function loginKiroInternal(
   callbacks: OAuthLoginCallbacks,
   preferredMethod: KiroLoginMethod = "auto",
 ): Promise<OAuthCredentials> {
-  const { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, getKiroCliSocialToken } =
-    await import("./kiro-cli.js");
+  const { getKiroCliCredentials, getKiroCliCredentialsAllowExpired, getKiroCliSocialToken } = await import(
+    "./kiro-cli.js"
+  );
 
   // If user explicitly wants social login, delegate to kiro-cli
   if (preferredMethod === "google" || preferredMethod === "github") {

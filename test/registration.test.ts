@@ -18,7 +18,7 @@ describe("Feature 1: Extension Registration", () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
 
-    mod.default(pi);
+    await mod.default(pi);
 
     expect(registerProvider).toHaveBeenCalledOnce();
     expect(registerProvider.mock.calls[0][0]).toBe("kiro");
@@ -27,7 +27,7 @@ describe("Feature 1: Extension Registration", () => {
   it("registers dynamic models array", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(Array.isArray(config.models)).toBe(true);
@@ -36,7 +36,7 @@ describe("Feature 1: Extension Registration", () => {
   it("preserves the existing OAuth and kiro-cli credential contract", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(config.oauth.name).toBe("Kiro (Builder ID / Google / GitHub)");
@@ -50,7 +50,7 @@ describe("Feature 1: Extension Registration", () => {
   it("registers a streamSimple handler", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(typeof config.streamSimple).toBe("function");
@@ -59,14 +59,38 @@ describe("Feature 1: Extension Registration", () => {
   it("uses kiro-api as the api type", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     expect(registerProvider.mock.calls[0][1].api).toBe("kiro-api");
   });
 
   const sampleKiroModels = [
-    { id: "deepseek-3-2", kiroModelId: "deepseek-3.2", name: "DeepSeek 3.2", provider: "kiro", api: "kiro-api" as const, baseUrl: "old", reasoning: true, input: ["text"] as ("text" | "image")[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 164000, maxTokens: 8192 },
-    { id: "claude-sonnet-4-6", kiroModelId: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", provider: "kiro", api: "kiro-api" as const, baseUrl: "old", reasoning: true, input: ["text", "image"] as ("text" | "image")[], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000000, maxTokens: 65536 },
+    {
+      id: "deepseek-3-2",
+      kiroModelId: "deepseek-3.2",
+      name: "DeepSeek 3.2",
+      provider: "kiro",
+      api: "kiro-api" as const,
+      baseUrl: "old",
+      reasoning: true,
+      input: ["text"] as ("text" | "image")[],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 164000,
+      maxTokens: 8192,
+    },
+    {
+      id: "claude-sonnet-4-6",
+      kiroModelId: "claude-sonnet-4.6",
+      name: "Claude Sonnet 4.6",
+      provider: "kiro",
+      api: "kiro-api" as const,
+      baseUrl: "old",
+      reasoning: true,
+      input: ["text", "image"] as ("text" | "image")[],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000000,
+      maxTokens: 65536,
+    },
   ];
 
   it.each([
@@ -81,7 +105,7 @@ describe("Feature 1: Extension Registration", () => {
   }) => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: ssoRegion };
@@ -92,7 +116,7 @@ describe("Feature 1: Extension Registration", () => {
   it("modifyModels carries the OAuth profile ARN on Kiro models only", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     const profileArn = "arn:aws:codewhisperer:us-east-1:123456789012:profile/social";
@@ -116,7 +140,7 @@ describe("Feature 1: Extension Registration", () => {
   it("modifyModels does not apply a hardcoded regional allowlist", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: "eu-west-1" };
@@ -130,7 +154,7 @@ describe("Feature 1: Extension Registration", () => {
   it("modifyModels preserves non-kiro provider models", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     const kiro = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));

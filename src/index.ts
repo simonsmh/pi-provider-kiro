@@ -49,9 +49,17 @@ async function refreshKiroModels(context: KiroModelRefreshContext): Promise<Mode
 
   if (credential && context.allowNetwork && (context.force || isCacheStale(apiRegion))) {
     try {
-      if ("type" in credential && credential.type === "api_key" && typeof (credential as { key?: string }).key === "string") {
+      if (
+        "type" in credential &&
+        credential.type === "api_key" &&
+        typeof (credential as { key?: string }).key === "string"
+      ) {
         await updateKiroModelsCache((credential as { key: string }).key, apiRegion);
-      } else if ("access" in credential && typeof (credential as { access?: string }).access === "string" && (credential as { access: string }).access) {
+      } else if (
+        "access" in credential &&
+        typeof (credential as { access?: string }).access === "string" &&
+        (credential as { access: string }).access
+      ) {
         const credObj = credential as { access: string; profileArn?: string };
         await updateKiroModelsCache(credObj.access, apiRegion, credObj.profileArn);
       }
@@ -88,7 +96,8 @@ export default async function (pi: ExtensionAPI) {
       modifyModels: (models: Model<Api>[], cred: OAuthCredentials) => {
         const apiRegion = resolveApiRegion((cred as KiroCredentials).region);
         const cachedKiro = getCachedModels(apiRegion);
-        const kiroToModify = cachedKiro.length > 0 ? cachedKiro : models.filter((m: Model<Api>) => m.provider === "kiro");
+        const kiroToModify =
+          cachedKiro.length > 0 ? cachedKiro : models.filter((m: Model<Api>) => m.provider === "kiro");
         const nonKiro = models.filter((m: Model<Api>) => m.provider !== "kiro");
         const credentialProfileArn = (cred as KiroCredentials).profileArn;
         const modifiedKiro = kiroToModify.map((m: Model<Api>) => ({
