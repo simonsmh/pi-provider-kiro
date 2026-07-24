@@ -36,8 +36,8 @@ import {
   resetKiroProfileArnCache,
   resolveKiroProfileArn,
 } from "./management.js";
-import { kiroAuthHeaders } from "./oauth.js";
 import { resolveKiroModel } from "./models.js";
+import { kiroAuthHeaders } from "./oauth.js";
 import {
   capacityRetryConfig,
   exponentialBackoff,

@@ -13,9 +13,9 @@
 // common AWS OIDC endpoints. Inference/API region is derived from SSO
 // region automatically via resolveApiRegion() in models.ts.
 
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import http from "node:http";
-import { execFileSync } from "node:child_process";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { formatSafeError } from "./debug.js";
 import { hasExtensionContext, showLoginUI, showWaitingUI } from "./login-ui.js";

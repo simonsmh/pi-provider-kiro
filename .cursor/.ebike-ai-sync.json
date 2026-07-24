@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "workspaceRoot": "/Users/simonsmh/Project/pi-provider-kiro",
+  "skills": {
+    "7395571512754579016": {
+      "name": "ebike-domain",
+      "relativePath": ".cursor/skills/ebike-domain",
+      "version": "1.0.0",
+      "fingerprint": "5b9e7df8e6c69042964fa341c5d28b699bf1d049e051b4bddd9584f9b4a759fe"
+    },
+    "7387992845385012375": {
+      "name": "ebike-metis-code-review",
+      "relativePath": ".cursor/skills/ebike-metis-code-review",
+      "version": "1.0.3",
+      "fingerprint": "234a3cd5d52f62d0895a7bb4647be863abb09bd31b093631fd75677c741fa925"
+    },
+    "7378716995937177917": {
+      "name": "ebike-service-map",
+      "relativePath": ".cursor/skills/ebike-service-map",
+      "version": "1.0.34",
+      "fingerprint": "29340d4a3e160c5256b0e0942a9455dfb32474a084cba1771f0ade556290f67b"
+    },
+    "7383141531644133391": {
+      "name": "lumi-docs",
+      "relativePath": ".cursor/skills/lumi-docs",
+      "version": "1.0.0",
+      "fingerprint": "21c47c30bc5ae4e65a96eb5089f13b997636684bcf51f6781ef963e42bc51749"
+    },
+    "7388340248110432666": {
+      "name": "metis-case",
+      "relativePath": ".cursor/skills/metis-case",
+      "version": "V6",
+      "fingerprint": "8f9df1bc4f73fcb596f28dd846827ba57cebbf002a248b0447eb4e93cd7f814c"
+    },
+    "7388340203013275953": {
+      "name": "metis-data",
+      "relativePath": ".cursor/skills/metis-data",
+      "version": "V12",
+      "fingerprint": "c108340ba7cb391259f2469dd3f6d1968ec1b7c0f6642e688408deb615e400e3"
+    },
+    "7388340153621151927": {
+      "name": "metis-issue",
+      "relativePath": ".cursor/skills/metis-issue",
+      "version": "V28",
+      "fingerprint": "711a16a7e1f34490fe4899c3b87f5702669fd91dfea392605d19362c1f8c56ba"
+    },
+    "7391799131304905330": {
+      "name": "metis-project",
+      "relativePath": ".cursor/skills/metis-project",
+      "version": "V4",
+      "fingerprint": "450813ff4c5a1687ca1b80ebc02faf56e080e1eae5244f101ea5afbd285a4367"
+    },
+    "7392541297360175140": {
+      "name": "metis-test-out",
+      "relativePath": ".cursor/skills/metis-test-out",
+      "version": "V3",
+      "fingerprint": "dfec643ebcc97acb2e2f873c5c801f067ec98b988ac54b4bdf870af2e13a1a3d"
+    },
+    "7371077574106415131": {
+      "name": "rtest",
+      "relativePath": ".cursor/skills/rtest",
+      "version": "1.0.4",
+      "fingerprint": "0f6d9ea421caee7a7b684cb8c8ea7bfb16d4cd69137c24e72f1c9e46df03cab2"
+    }
+  },
+  "rules": {
+    "7394349171504644560": {
+      "name": "rent-codesearch",
+      "relativePath": ".cursor/rules/rent-codesearch.mdc",
+      "contentHash": "d569576d00c2ea47e5d92829d0c435ff3aea8c416a392b869331454987a63ed1"
+    },
+    "7394668616139673945": {
+      "name": "Java8",
+      "relativePath": ".cursor/rules/Java8.mdc",
+      "contentHash": "0f038b6639bb2c6ad3223b8053529730b4edbab1f2e05164b3efc60d01c9958b"
+    }
+  },
+  "agents": {}
+}
