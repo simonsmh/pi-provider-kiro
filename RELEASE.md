@@ -1,6 +1,6 @@
 # Release Process
 
-This project publishes to npm as [`pi-provider-kiro`](https://www.npmjs.com/package/pi-provider-kiro). Releases are triggered by GitHub Releases and automated via GitHub Actions.
+This fork publishes to npm as [`pi-provider-kiro-dev`](https://www.npmjs.com/package/pi-provider-kiro-dev). Do not publish as `pi-provider-kiro` — that name is the upstream package. Releases are triggered by GitHub Releases and automated via GitHub Actions.
 
 ## Versioning
 
@@ -39,7 +39,7 @@ git push origin v<VERSION>
 
 ### 3. Create a GitHub Release
 
-Go to [Releases](https://github.com/mikeyobrien/pi-provider-kiro/releases) → **Draft a new release**:
+Go to [Releases](https://github.com/simonsmh/pi-provider-kiro/releases) → **Draft a new release**:
 
 - Select the `v<VERSION>` tag
 - Title: `v<VERSION>`

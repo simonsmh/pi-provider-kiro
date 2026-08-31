@@ -16,13 +16,13 @@ Kiro gives you a strong free model menu, but pi needs a provider that speaks Kir
 Install the provider:
 
 ```bash
-pi install npm:pi-provider-kiro
+pi install npm:pi-provider-kiro-dev
 ```
 
 Or install it globally with npm:
 
 ```bash
-npm install -g pi-provider-kiro
+npm install -g pi-provider-kiro-dev
 ```
 
 Then log in from pi:
@@ -95,7 +95,7 @@ import {
   isCapacityError,
   isNonRetryableBodyError,
   isTooBigError,
-} from "pi-provider-kiro";
+} from "pi-provider-kiro-dev";
 
 isTooBigError(400, body); // size rejection → safe to compact and retry
 isCapacityError(body); // transient capacity → safe to retry as-is

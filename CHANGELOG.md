@@ -7,17 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.10.0] - 2026-09-01
 
-- The entry module now re-exports `KiroManagementHttpError`. The class already shipped in 0.10.0 and is thrown by every management-plane request that returns a non-OK status (profile discovery, model catalog, usage limits) and already caught in `stream.ts`, where a 403 drives the credential-refresh retry — but it was not re-exported from `src/index.ts`, and there is no per-module file to deep-import instead: the build bundles the whole graph into one `dist/index.js`. No behaviour change: the class, its `status` field, and every throw and catch site are unchanged. Same entry-point caveat as the 0.10.0 re-exports — this is the extension entry the pi host loads, not a resolvable npm entry point.
-- Discover credentials and refresh the management model catalog during extension startup, using `KIRO_API_KEY`, kiro-cli social/general credentials, then Kiro IDE credentials in precedence order. The host-driven `refreshModels` hook remains available for explicit refreshes.
+This fork release publishes as **`pi-provider-kiro-dev@0.10.0`** (not upstream `pi-provider-kiro`). It is based on the upstream 0.10.x line through 0.10.1 plus later `dev-0.10` commits, and restores the three fork catalog behaviors from the 0.9.x series.
+
+### Changed
+
+- Replace the hardcoded bootstrap catalog with an empty bootstrap so cold starts use management discovery or cache data rather than a stale baked-in list.
+- Discover credentials and refresh the management model catalog during extension startup (`refreshKiroModels`), using `KIRO_API_KEY`, kiro-cli social/general credentials, then Kiro IDE credentials in precedence order. The host-driven `refreshModels` hook remains available for explicit refreshes.
+- Write the version 2 catalog cache to `~/.pi/agent/kiro-management-models-cache.json`, while continuing to read the legacy `~/.kiro-management-models-cache.json` path.
 
 ### Fixed
 
-- Replace the hardcoded bootstrap catalog with an empty bootstrap so cold starts use management discovery or cache data. The version 2 catalog cache now writes to `~/.pi/agent/kiro-management-models-cache.json` while continuing to read the legacy `~/.kiro-management-models-cache.json` path.
 - Resolve a `ksk_` API key's profile through `GetProfile` rather than `ListAvailableProfiles`, which answers 403 "Unsupported token type" for API keys in every canonical region. Startup discovery with `KIRO_API_KEY` previously failed profile resolution and left the catalog empty; the models query now uses the returned ARN in the key-issuing region. `KIRO_PROFILE_ARN` still takes precedence, and non-API-key tokens keep the existing regional probe.
-- Normalize cross-provider tool-call IDs before sending them to Kiro. OpenAI Responses persists compound IDs such as `call_…|fc_…` that exceed Kiro's 64-character limit and contain an unsupported pipe, which previously wedged a session with `400 REQUEST_BODY_INVALID` after switching models. Native Kiro IDs remain unchanged, while remapped tool uses and results retain the same deterministic ID.
-- Profile discovery now continues probing the remaining canonical management regions after a regional 403 on ListAvailableProfiles, instead of aborting on the primary region. A region-mismatched token whose profile lives in another canonical region (e.g. us-east-1 token, eu-central-1 profile) previously surfacing `ListAvailableProfiles failed in <region>: 403 Forbidden` now resolves correctly (#131). A 403 on every region is still rethrown so credential refresh/retry paths (#107) engage for genuine auth failures.
+
+### Upstream 0.10 lineage (summary)
+
+Based on upstream `pi-provider-kiro` 0.10.x. Highlights rather than a full commit dump:
+
+- **0.10.0:** conversation repair and displaced tool-result relocation, stop flattening reasoning into assistant text, empty `content` on tool-result turns, history-validator / repair helpers, empty-content placeholder instead of mislabeling structural 400s as context overflow.
+- **0.10.1:** `KIRO_PROFILE_ARN` plus IDC profile ARN passthrough, XML-dialect tool-call recovery, quieter capacity retries, regional `ListAvailableProfiles` probe when the SSO region is wrong, isolated thinking blocks in stream order.
+- **After 0.10.1 on this branch:** re-export `KiroManagementHttpError`; normalize cross-provider tool-call IDs that exceed Kiro's 64-character / pipe constraints; continue probing remaining canonical regions after a regional 403 on `ListAvailableProfiles`.
+
+The detailed upstream 0.10.1 / 0.10.0 notes below are retained from that lineage.
 
 ## [0.10.1] - 2026-08-24
 
@@ -30,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve every literal `<thinking>`, ` thinking`, `<reasoning>`, or `<thought>` region in one streamed response as its own thinking block instead of leaking every region after the first into visible assistant text.
 - Keep parsed thinking blocks in the order the wire delivered them instead of splicing them ahead of text already emitted. The parser moved a thinking block into the index of an existing text block to make the content array read thinking → text, which made the persisted array contradict the stream and reused one `contentIndex` for two different blocks — an index-addressed consumer such as pi-mono's proxy transport overwrote the text it had already placed and then threw on the following `text_end`. Empty tagged regions are still materialized. Presentation order is unaffected: outbound history still prepends every thinking block, and renderers drive thinking from stream events.
 
-## [0.10.0] - 2026-08-16
+## 0.10.0 (upstream) - 2026-08-16
 
 ### Fixed
 
@@ -238,9 +250,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: 17 models across 7 families, OAuth device code flow, kiro-cli SQLite credential fallback, streaming pipeline with thinking tag parser
 
-[Unreleased]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.9.9...v0.10.0
 [0.10.1]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.10.0...v0.10.1
-[0.10.0]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.0...v0.9.1
