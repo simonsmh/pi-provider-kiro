@@ -115,7 +115,7 @@ describe("Feature 2: Model Definitions", () => {
 
       expect(resolveKiroModel("claude-opus-4-8")).toBe("claude-opus-4.8");
       expect(resolveKiroModel("openai-gpt-5-6")).toBe("openai-gpt-5.6");
-      expect(KIRO_MODEL_IDS).toEqual(new Set(models.map((model) => model.kiroModelId)));
+      expect(KIRO_MODEL_IDS).toEqual(new Set(["claude-opus-4.8", "openai-gpt-5.6"]));
     });
   });
 
@@ -374,7 +374,14 @@ describe("Feature 2: Model Definitions", () => {
     const THROUGH_HIGH = ["off", "minimal", "low", "medium", "high"] satisfies ModelThinkingLevel[];
     const THROUGH_XHIGH_AND_MAX = [...THROUGH_HIGH, "xhigh", "max"] satisfies ModelThinkingLevel[];
     const THROUGH_HIGH_AND_MAX = [...THROUGH_HIGH, "max"] satisfies ModelThinkingLevel[];
-    const XHIGH_AND_MAX_MODELS = ["claude-opus-4-8", "claude-opus-4-7", "claude-sonnet-5", "claude-fable-5"];
+    const XHIGH_AND_MAX_MODELS = [
+      "openai-gpt-5-6",
+      "gpt-5-6-luna",
+      "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-sonnet-5",
+      "claude-fable-5",
+    ];
     const MAX_WITHOUT_XHIGH_MODELS = ["claude-opus-4-6", "claude-sonnet-4-6"];
 
     it("advertises xhigh and max independently when both are supported", () => {

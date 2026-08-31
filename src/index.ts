@@ -83,9 +83,16 @@ async function refreshKiroModels(context: KiroRefreshModelsContext): Promise<Kir
   }
 
   const oauthCredential = credential && "access" in credential ? (credential as KiroCredentials) : undefined;
+  const apiKey =
+    credential &&
+    "type" in credential &&
+    credential.type === "api_key" &&
+    "key" in credential &&
+    typeof credential.key === "string"
+      ? credential.key
+      : undefined;
   const accessToken =
-    oauthCredential?.access ??
-    (credential && "type" in credential && credential.type === "api_key" ? credential.key : undefined);
+    typeof oauthCredential?.access === "string" && oauthCredential.access ? oauthCredential.access : apiKey;
   const region = resolveApiRegion(oauthCredential?.region);
 
   if (context.signal?.aborted) return [];
