@@ -136,13 +136,16 @@ describe("Feature 1: Extension Registration", () => {
     expect(config.models).toEqual([]);
   });
 
+  // A `ksk_` key must reach the catalog through GetProfile: ListAvailableProfiles
+  // answers 403 "Unsupported token type" for API keys, which would otherwise
+  // leave the empty bootstrap catalog empty at startup.
   it("awaits startup discovery and gives KIRO_API_KEY precedence over local credentials", async () => {
-    process.env.KIRO_API_KEY = "startup-api-key";
+    process.env.KIRO_API_KEY = "ksk_not-a-real-key";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ profiles: [{ arn: "arn:startup" }] }),
+        json: () => Promise.resolve({ profile: { arn: "arn:startup" } }),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -158,6 +161,7 @@ describe("Feature 1: Extension Registration", () => {
     expect(credentialMocks.cli).not.toHaveBeenCalled();
     expect(credentialMocks.ide).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].headers["X-Amz-Target"]).toBe("AmazonCodeWhispererService.GetProfile");
     expect(registerProvider.mock.calls[0][1].models.map((model: KiroModel) => model.id)).toEqual(["claude-sonnet-4-6"]);
   });
 
