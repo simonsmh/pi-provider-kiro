@@ -1,9 +1,9 @@
 // Feature 2: Model Definitions
 
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { getKiroEffortConfig, type KiroEffortConfig } from "./effort.js";
 import { getKiroEndpoints } from "./endpoints.js";
@@ -13,12 +13,12 @@ export { resolveApiRegion } from "./endpoints.js";
 
 export const KIRO_MANAGEMENT_CACHE_VERSION = 2;
 export const KIRO_MANAGEMENT_CACHE_SOURCE = "kiro-management";
-export const KIRO_MANAGEMENT_CACHE_PATH = join(homedir(), ".kiro-management-models-cache.json");
+export const KIRO_MANAGEMENT_CACHE_PATH = join(homedir(), ".pi", "agent", "kiro-management-models-cache.json");
+export const LEGACY_HOME_CACHE_PATH = join(homedir(), ".kiro-management-models-cache.json");
 
 const CACHE_MAX_AGE_MS = 3600_000;
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const DEFAULT_MAX_TOKENS = 8_192;
-const BASE_URL = getKiroEndpoints("us-east-1").runtime;
 const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 const REASONING_FAMILY_MARKERS = ["opus", "sonnet", "fable", "coder", "deepseek", "gpt", "glm", "qwen"];
 /** Non-Claude models whose Kiro runtime vision support has been verified end to end. */
@@ -66,231 +66,10 @@ interface ManagementModelsCache {
   regions: Record<string, ManagementCacheRegion>;
 }
 
-const bootstrapKiroModels: KiroModel[] = [
-  {
-    id: "claude-opus-4-8",
-    kiroModelId: "claude-opus-4.8",
-    name: "Claude Opus 4.8",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    thinkingLevelMap: { xhigh: "xhigh", max: "max" },
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 128000,
-    firstTokenTimeout: 180_000,
-  },
-  {
-    id: "claude-opus-4-7",
-    kiroModelId: "claude-opus-4.7",
-    name: "Claude Opus 4.7",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    thinkingLevelMap: { xhigh: "xhigh", max: "max" },
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 128000,
-    firstTokenTimeout: 180_000,
-  },
-  {
-    id: "claude-opus-4-6",
-    kiroModelId: "claude-opus-4.6",
-    name: "Claude Opus 4.6",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    thinkingLevelMap: { max: "max" },
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 32768,
-  },
-  {
-    id: "claude-sonnet-5",
-    kiroModelId: "claude-sonnet-5",
-    name: "Claude Sonnet 5",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    thinkingLevelMap: { xhigh: "xhigh", max: "max" },
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 65536,
-  },
-  {
-    id: "claude-sonnet-4-6",
-    kiroModelId: "claude-sonnet-4.6",
-    name: "Claude Sonnet 4.6",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    thinkingLevelMap: { max: "max" },
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 65536,
-  },
-  {
-    id: "claude-sonnet-4-5",
-    kiroModelId: "claude-sonnet-4.5",
-    name: "Claude Sonnet 4.5",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 65536,
-  },
-  {
-    id: "claude-sonnet-4",
-    kiroModelId: "claude-sonnet-4",
-    name: "Claude Sonnet 4",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 65536,
-  },
-  {
-    id: "claude-haiku-4-5",
-    kiroModelId: "claude-haiku-4.5",
-    name: "Claude Haiku 4.5",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: false,
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 65536,
-  },
-  {
-    id: "claude-fable-5",
-    kiroModelId: "claude-fable-5",
-    name: "Claude Fable 5",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    thinkingLevelMap: { xhigh: "xhigh", max: "max" },
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 65536,
-  },
-  {
-    id: "deepseek-3-2",
-    kiroModelId: "deepseek-3.2",
-    name: "DeepSeek 3.2",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    input: ["text"],
-    cost: ZERO_COST,
-    contextWindow: 164000,
-    maxTokens: 8192,
-  },
-  {
-    id: "minimax-m2-5",
-    kiroModelId: "minimax-m2.5",
-    name: "MiniMax M2.5",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: false,
-    input: ["text"],
-    cost: ZERO_COST,
-    contextWindow: 196000,
-    maxTokens: 8192,
-  },
-  {
-    id: "minimax-m2-1",
-    kiroModelId: "minimax-m2.1",
-    name: "MiniMax M2.1",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: false,
-    input: ["text"],
-    cost: ZERO_COST,
-    contextWindow: 196000,
-    maxTokens: 8192,
-  },
-  {
-    id: "glm-5",
-    kiroModelId: "glm-5",
-    name: "GLM 5",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    input: ["text"],
-    cost: ZERO_COST,
-    contextWindow: 200000,
-    maxTokens: 8192,
-  },
-  {
-    id: "qwen3-coder-next",
-    kiroModelId: "qwen3-coder-next",
-    name: "Qwen3 Coder Next",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    input: ["text"],
-    cost: ZERO_COST,
-    contextWindow: 256000,
-    maxTokens: 8192,
-  },
-  {
-    id: "auto",
-    kiroModelId: "auto",
-    name: "Auto",
-    api: "kiro-api",
-    provider: "kiro",
-    baseUrl: BASE_URL,
-    reasoning: true,
-    input: ["text", "image"],
-    cost: ZERO_COST,
-    contextWindow: 1000000,
-    maxTokens: 65536,
-  },
-];
+/** Model registration is populated only from the authenticated management catalog/cache. */
+export const kiroModels: KiroModel[] = [];
 
-/**
- * Bootstrap models carry no catalog schema, so their ladder comes from the same
- * `getKiroEffortConfig` fallback the request path uses. Deriving here instead of
- * hardcoding per-model literals keeps one source of truth: `effort.ts` decides
- * which model gets which rungs, and discovery overwrites this once it runs.
- */
-export const kiroModels: KiroModel[] = bootstrapKiroModels.map((model) => {
-  const effortConfig = model.reasoning
-    ? getKiroEffortConfig(model.additionalModelRequestFieldsSchema, model.kiroModelId)
-    : undefined;
-  const thinking = deriveThinkingConfig(effortConfig);
-  return {
-    ...model,
-    ...(thinking ? { thinking } : {}),
-    ...(model.id.startsWith("claude-") ? { recoverTextToolCalls: false } : {}),
-  };
-});
-
-const BOOTSTRAP_KIRO_MODEL_IDS = kiroModels.map((model) => model.kiroModelId);
+const BOOTSTRAP_KIRO_MODEL_IDS: string[] = [];
 
 /** Exact service IDs known from either the bootstrap list or a valid management cache. */
 export const KIRO_MODEL_IDS = new Set(BOOTSTRAP_KIRO_MODEL_IDS);
@@ -401,15 +180,21 @@ function parseManagementCache(raw: string): ManagementModelsCache | undefined {
 }
 
 function readManagementCache(): ManagementModelsCache | undefined {
-  if (!existsSync(KIRO_MANAGEMENT_CACHE_PATH)) return undefined;
+  const cachePath = existsSync(KIRO_MANAGEMENT_CACHE_PATH)
+    ? KIRO_MANAGEMENT_CACHE_PATH
+    : existsSync(LEGACY_HOME_CACHE_PATH)
+      ? LEGACY_HOME_CACHE_PATH
+      : undefined;
+  if (!cachePath) return undefined;
   try {
-    return parseManagementCache(readFileSync(KIRO_MANAGEMENT_CACHE_PATH, "utf-8"));
+    return parseManagementCache(readFileSync(cachePath, "utf-8"));
   } catch {
     return undefined;
   }
 }
 
 function writeManagementCache(cache: ManagementModelsCache): void {
+  mkdirSync(dirname(KIRO_MANAGEMENT_CACHE_PATH), { recursive: true });
   const temporaryPath = `${KIRO_MANAGEMENT_CACHE_PATH}.${process.pid}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temporaryPath, JSON.stringify(cache, null, 2), "utf-8");

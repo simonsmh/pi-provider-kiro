@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The entry module now re-exports `KiroManagementHttpError`. The class already shipped in 0.10.0 and is thrown by every management-plane request that returns a non-OK status (profile discovery, model catalog, usage limits) and already caught in `stream.ts`, where a 403 drives the credential-refresh retry — but it was not re-exported from `src/index.ts`, and there is no per-module file to deep-import instead: the build bundles the whole graph into one `dist/index.js`. No behaviour change: the class, its `status` field, and every throw and catch site are unchanged. Same entry-point caveat as the 0.10.0 re-exports — this is the extension entry the pi host loads, not a resolvable npm entry point.
+- Discover credentials and refresh the management model catalog during extension startup, using `KIRO_API_KEY`, kiro-cli social/general credentials, then Kiro IDE credentials in precedence order. The host-driven `refreshModels` hook remains available for explicit refreshes.
 
 ### Fixed
 
+- Replace the hardcoded bootstrap catalog with an empty bootstrap so cold starts use management discovery or cache data. The version 2 catalog cache now writes to `~/.pi/agent/kiro-management-models-cache.json` while continuing to read the legacy `~/.kiro-management-models-cache.json` path.
 - Normalize cross-provider tool-call IDs before sending them to Kiro. OpenAI Responses persists compound IDs such as `call_…|fc_…` that exceed Kiro's 64-character limit and contain an unsupported pipe, which previously wedged a session with `400 REQUEST_BODY_INVALID` after switching models. Native Kiro IDs remain unchanged, while remapped tool uses and results retain the same deterministic ID.
 - Profile discovery now continues probing the remaining canonical management regions after a regional 403 on ListAvailableProfiles, instead of aborting on the primary region. A region-mismatched token whose profile lives in another canonical region (e.g. us-east-1 token, eu-central-1 profile) previously surfacing `ListAvailableProfiles failed in <region>: 403 Forbidden` now resolves correctly (#131). A 403 on every region is still rethrown so credential refresh/retry paths (#107) engage for genuine auth failures.
 

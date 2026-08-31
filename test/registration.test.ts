@@ -3,7 +3,27 @@ import type { ProviderModelsStore } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getKiroCliCredentials } from "../src/kiro-cli.js";
-import { KIRO_MANAGEMENT_CACHE_PATH, kiroModels } from "../src/models.js";
+import { KIRO_MANAGEMENT_CACHE_PATH, type KiroModel, kiroModels } from "../src/models.js";
+
+const credentialMocks = vi.hoisted(() => ({
+  cli: vi.fn(),
+  social: vi.fn(),
+  ide: vi.fn(),
+}));
+
+vi.mock("../src/kiro-cli.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/kiro-cli.js")>("../src/kiro-cli.js");
+  return {
+    ...actual,
+    getKiroCliCredentials: credentialMocks.cli,
+    getKiroCliSocialToken: credentialMocks.social,
+  };
+});
+
+vi.mock("../src/kiro-ide.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/kiro-ide.js")>("../src/kiro-ide.js");
+  return { ...actual, getKiroIdeCredentials: credentialMocks.ide };
+});
 
 const mockPi = () => {
   const registerProvider = vi.fn();
@@ -17,7 +37,50 @@ const mockProviderModelsStore = (): ProviderModelsStore => ({
   delete: vi.fn(async () => {}),
 });
 
+const sampleKiroModels: KiroModel[] = [
+  {
+    id: "deepseek-3-2",
+    kiroModelId: "deepseek-3.2",
+    name: "DeepSeek 3.2",
+    provider: "kiro",
+    api: "kiro-api",
+    baseUrl: "old",
+    reasoning: true,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 164_000,
+    maxTokens: 8192,
+  },
+  {
+    id: "claude-sonnet-4-6",
+    kiroModelId: "claude-sonnet-4.6",
+    name: "Claude Sonnet 4.6",
+    provider: "kiro",
+    api: "kiro-api",
+    baseUrl: "old",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 65_536,
+  },
+];
+
 describe("Feature 1: Extension Registration", () => {
+  beforeEach(() => {
+    delete process.env.KIRO_API_KEY;
+    credentialMocks.cli.mockReset();
+    credentialMocks.social.mockReset();
+    credentialMocks.ide.mockReset();
+    rmSync(KIRO_MANAGEMENT_CACHE_PATH, { force: true });
+  });
+
+  afterEach(() => {
+    delete process.env.KIRO_API_KEY;
+    vi.unstubAllGlobals();
+    rmSync(KIRO_MANAGEMENT_CACHE_PATH, { force: true });
+  });
+
   it("exports a default function", async () => {
     const mod = await import("../src/index.js");
     expect(typeof mod.default).toBe("function");
@@ -57,25 +120,108 @@ describe("Feature 1: Extension Registration", () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
 
-    mod.default(pi);
+    await mod.default(pi);
 
     expect(registerProvider).toHaveBeenCalledOnce();
     expect(registerProvider.mock.calls[0][0]).toBe("kiro");
   });
 
-  it("registers 15 models", async () => {
+  it("registers an empty catalog when neither credentials nor a cache are available", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    expect(config.models).toHaveLength(15);
+    expect(kiroModels).toEqual([]);
+    expect(config.models).toEqual([]);
+  });
+
+  it("awaits startup discovery and gives KIRO_API_KEY precedence over local credentials", async () => {
+    process.env.KIRO_API_KEY = "startup-api-key";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ profiles: [{ arn: "arn:startup" }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ models: [{ modelId: "claude-sonnet-4.6" }] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mod = await import("../src/index.js");
+    const { pi, registerProvider } = mockPi();
+    await mod.default(pi);
+
+    expect(credentialMocks.social).not.toHaveBeenCalled();
+    expect(credentialMocks.cli).not.toHaveBeenCalled();
+    expect(credentialMocks.ide).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(registerProvider.mock.calls[0][1].models.map((model: KiroModel) => model.id)).toEqual(["claude-sonnet-4-6"]);
+  });
+
+  it("checks kiro-cli social credentials before the general kiro-cli credential scan", async () => {
+    const cliCredential = {
+      access: "cli-access",
+      refresh: "cli-refresh|idc",
+      expires: Date.now() + 60_000,
+      region: "us-east-1",
+      authMethod: "idc" as const,
+      profileArn: "arn:cli",
+      clientId: "",
+      clientSecret: "",
+    };
+    credentialMocks.cli.mockReturnValue(cliCredential);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ models: [{ modelId: "deepseek-3.2" }] }),
+      }),
+    );
+
+    const mod = await import("../src/index.js");
+    const { pi } = mockPi();
+    await mod.default(pi);
+
+    expect(credentialMocks.social).toHaveBeenCalledOnce();
+    expect(credentialMocks.cli).toHaveBeenCalledOnce();
+    expect(credentialMocks.ide).not.toHaveBeenCalled();
+  });
+
+  it("uses Kiro IDE credentials only after both kiro-cli scans miss", async () => {
+    credentialMocks.ide.mockReturnValue({
+      access: "ide-access",
+      refresh: "ide-refresh|||idc",
+      expires: Date.now() + 60_000,
+      region: "us-east-1",
+      authMethod: "idc",
+      profileArn: "arn:ide",
+      clientId: "",
+      clientSecret: "",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ models: [{ modelId: "glm-5" }] }),
+      }),
+    );
+
+    const mod = await import("../src/index.js");
+    const { pi } = mockPi();
+    await mod.default(pi);
+
+    expect(credentialMocks.social).toHaveBeenCalledOnce();
+    expect(credentialMocks.cli).toHaveBeenCalledOnce();
+    expect(credentialMocks.ide).toHaveBeenCalledOnce();
   });
 
   it("preserves the existing OAuth and kiro-cli credential contract", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(config.oauth.name).toBe("Kiro (Builder ID / Google / GitHub)");
@@ -89,7 +235,7 @@ describe("Feature 1: Extension Registration", () => {
   it("registers a streamSimple handler", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     expect(typeof config.streamSimple).toBe("function");
@@ -98,7 +244,7 @@ describe("Feature 1: Extension Registration", () => {
   it("uses kiro-api as the api type", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     expect(registerProvider.mock.calls[0][1].api).toBe("kiro-api");
   });
@@ -116,11 +262,11 @@ describe("Feature 1: Extension Registration", () => {
     const refreshModels = async () => {
       const mod = await import("../src/index.js");
       const { pi, registerProvider } = mockPi();
-      mod.default(pi);
+      await mod.default(pi);
       return registerProvider.mock.calls[0][1].refreshModels;
     };
 
-    it("serves the bootstrap catalog without a credential and never hits the network", async () => {
+    it("serves an empty catalog without a credential and never hits the network", async () => {
       const fetchMock = vi.fn();
       vi.stubGlobal("fetch", fetchMock);
 
@@ -189,23 +335,21 @@ describe("Feature 1: Extension Registration", () => {
   }) => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    const models = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: ssoRegion };
-    const modified = config.oauth.modifyModels(models, creds);
+    const modified = config.oauth.modifyModels(sampleKiroModels, creds);
     expect(modified[0].baseUrl).toBe(`https://runtime.${expectedApiRegion}.kiro.dev/`);
   });
 
   it("modifyModels carries the OAuth profile ARN on Kiro models only", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
     const profileArn = "arn:aws:codewhisperer:us-east-1:123456789012:profile/social";
-    const models = kiroModels.map((model) => ({ ...model, baseUrl: "old" }));
     const creds = {
       access: "social-access",
       refresh: "social-refresh|desktop",
@@ -217,23 +361,22 @@ describe("Feature 1: Extension Registration", () => {
       profileArn,
     };
 
-    const modified = config.oauth.modifyModels(models, creds);
+    const modified = config.oauth.modifyModels(sampleKiroModels, creds);
 
-    expect(modified).toHaveLength(models.length);
+    expect(modified).toHaveLength(sampleKiroModels.length);
     expect(modified.every((model: { kiroProfileArn?: string }) => model.kiroProfileArn === profileArn)).toBe(true);
   });
 
   it("modifyModels does not apply a hardcoded regional allowlist", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    const models = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: "eu-west-1" };
-    const modified = config.oauth.modifyModels(models, creds);
+    const modified = config.oauth.modifyModels(sampleKiroModels, creds);
     const ids = modified.map((m: { id: string }) => m.id);
-    expect(modified).toHaveLength(models.length);
+    expect(modified).toHaveLength(sampleKiroModels.length);
     expect(ids).toContain("deepseek-3-2");
     expect(ids).toContain("claude-sonnet-4-6");
   });
@@ -241,10 +384,9 @@ describe("Feature 1: Extension Registration", () => {
   it("modifyModels preserves non-kiro provider models", async () => {
     const mod = await import("../src/index.js");
     const { pi, registerProvider } = mockPi();
-    mod.default(pi);
+    await mod.default(pi);
 
     const config = registerProvider.mock.calls[0][1];
-    const kiro = kiroModels.map((m) => ({ ...m, provider: "kiro", api: "kiro-api", baseUrl: "old" }));
     const codex = [
       {
         id: "gpt-5.4",
@@ -255,7 +397,7 @@ describe("Feature 1: Extension Registration", () => {
       },
     ];
     const creds = { access: "x", refresh: "x", expires: 0, clientId: "", clientSecret: "", region: "eu-west-1" };
-    const modified = config.oauth.modifyModels([...kiro, ...codex], creds);
+    const modified = config.oauth.modifyModels([...sampleKiroModels, ...codex], creds);
 
     expect(modified).toEqual(
       expect.arrayContaining([
