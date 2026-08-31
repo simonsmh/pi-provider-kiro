@@ -6,8 +6,8 @@ import type { Api, Model, OAuthCredentials, RefreshModelsContext } from "@earend
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { formatSafeError } from "./debug.js";
 import { getKiroEndpoints, resolveApiRegion } from "./endpoints.js";
-import { getKiroIdeCredentials } from "./kiro-ide.js";
 import { getKiroCliCredentials, getKiroCliSocialToken } from "./kiro-cli.js";
+import { getKiroIdeCredentials } from "./kiro-ide.js";
 import { setExtensionContext } from "./login-ui.js";
 import { getCachedModels, isCacheStale, type KiroModel, updateKiroModelsCache } from "./models.js";
 import type { KiroCredentials } from "./oauth.js";
