@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-01
+
+Published as **`pi-provider-kiro-dev@0.10.1`**.
+
+### Fixed
+
+- Register the provider synchronously so `kiro-api` exists before the first chat. 0.10.0's extension factory was `async` and awaited startup catalog discovery *before* calling `pi.registerProvider`, so a host that does not await an async extension factory reached `streamAssistantResponse` with the api registry still empty and crashed the process with `Error: No API provider registered for api: kiro-api` — while the model picker still offered Kiro models, because those come from the host's own `models.json` and the on-disk catalog cache rather than from the registration. The factory is a plain synchronous function again: it resolves local credentials and reads the catalog cache (both file/environment reads, no network), registers, and only then kicks off discovery without awaiting it. The host's `refreshModels` hook and `oauth.modifyModels` still fill in the catalog afterwards, so a cold start with no cache registers an empty model list rather than delaying registration to populate one.
+- Also register `kiro-api` with pi-ai's compat api registry (`registerApiProvider` from `@earendil-works/pi-ai/compat`) for hosts that still dispatch through it. This is best effort and deliberately non-fatal: the subpath may not resolve, and a host that bundles its own pi-ai copy dispatches through a module instance an on-disk import cannot reach, so it cannot substitute for the synchronous `pi.registerProvider` above. It runs after registration because importing compat pulls in pi-ai's entire builtin API graph. The build now marks `@earendil-works/pi-ai/*` external as well, so the subpath is not bundled.
+
+### Changed
+
+- Startup catalog discovery no longer blocks registration. `whenStartupCatalogSettled()` is exported so a caller (and the test suite) can observe that fire-and-forget work without racing it. Local credential discovery runs once per activation and its result is shared between the cache read and the background refresh, instead of each scanning `KIRO_API_KEY` → kiro-cli → Kiro IDE separately.
+
 ## [0.10.0] - 2026-09-01
 
 This fork release publishes as **`pi-provider-kiro-dev@0.10.0`** (not upstream `pi-provider-kiro`). It is based on the upstream 0.10.x line through 0.10.1 plus later `dev-0.10` commits, and restores the three fork catalog behaviors from the 0.9.x series.
@@ -31,7 +44,7 @@ Based on upstream `pi-provider-kiro` 0.10.x. Highlights rather than a full commi
 
 The detailed upstream 0.10.1 / 0.10.0 notes below are retained from that lineage.
 
-## [0.10.1] - 2026-08-24
+## 0.10.1 (upstream) - 2026-08-24
 
 ### Fixed
 
@@ -250,9 +263,9 @@ The detailed upstream 0.10.1 / 0.10.0 notes below are retained from that lineage
 
 - Initial release: 17 models across 7 families, OAuth device code flow, kiro-cli SQLite credential fallback, streaming pipeline with thinking tag parser
 
-[Unreleased]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.9.9...v0.10.0
-[0.10.1]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.10.0...v0.10.1
 [0.9.3]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.0...v0.9.1
