@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- This fork publishes as `pi-provider-kiro-dev` and uses an empty bootstrap catalog (cache/discovery only).
+
 - Write the catalog cache to ~/.pi/agent/kiro-management-models-cache.json, still reading the legacy ~/.kiro-management-models-cache.json path.
 
 - At startup (and when the host refreshModels hook has no credential), scan KIRO_API_KEY then kiro-cli then Kiro IDE and refresh the catalog without blocking registration.
@@ -257,8 +259,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: 17 models across 7 families, OAuth device code flow, kiro-cli SQLite credential fallback, streaming pipeline with thinking tag parser
 
-[Unreleased]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.10.2...HEAD
-[0.10.2]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.10.1...v0.10.2
+[Unreleased]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/simonsmh/pi-provider-kiro/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/mikeyobrien/pi-provider-kiro/compare/v0.9.2...v0.9.3
